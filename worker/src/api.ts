@@ -1,5 +1,5 @@
 import {
-  type Db, getItem, ingest, listItems, listPrs, STATES, summary, timeline, validatePayload,
+  type Db, getItem, ingest, listItems, listPrs, respond, STATES, summary, timeline, validatePayload,
 } from "@agent-tracker/core";
 
 const json = (body: unknown, status = 200) =>
@@ -18,6 +18,11 @@ export async function api(db: Db, req: Request): Promise<Response> {
       const results = [];
       for (const p of payloads) results.push({ source: p.source, home: p.home, ...(await ingest(db, p)) });
       return json({ ok: true, results });
+    }
+    const responding = path.match(/^\/api\/items\/(.+)\/respond$/);
+    if (req.method === "POST" && responding) {
+      const r = await respond(db, decodeURIComponent(responding[1]), await req.json());
+      return r ? json(r) : json({ error: "not found" }, 404);
     }
     if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
     if (path === "/api/items") {
@@ -39,6 +44,6 @@ export async function api(db: Db, req: Request): Promise<Response> {
     return json({ error: "not found" }, 404);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return json({ error: msg }, /payload|bad item|bad event|JSON/.test(msg) ? 400 : 500);
+    return json({ error: msg }, /payload|bad item|bad event|bad response|JSON/.test(msg) ? 400 : 500);
   }
 }

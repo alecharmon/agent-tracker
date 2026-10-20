@@ -2,6 +2,19 @@
   "name": "agent-tracker",
   "private": true,
   "type": "module",
-  "workspaces": ["core", "cli", "worker", "web", "raycast"],
-  "engines": { "node": ">=22.18" }
+  "workspaces": [
+    "core",
+    "cli",
+    "worker",
+    "web"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @agent-tracker/worker",
+    "build": "npm run build -w @agent-tracker/web",
+    "test": "npm test -w @agent-tracker/core",
+    "seed": "node --no-warnings cli/src/main.ts seed"
+  }
 }
