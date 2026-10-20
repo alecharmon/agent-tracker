@@ -1,6 +1,7 @@
 import { AlertTriangleIcon, SparkleIcon } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import * as React from "react"
+import { RichText } from "@/components/rich-text"
 import { RollingNumber } from "@/components/rolling-number"
 import { Badge } from "@/components/ui/badge"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -225,7 +226,7 @@ function Block({ item: i, lane, events, now, left, right, top, onAsk }: {
         </span>
         <ul className="flex flex-col gap-0.5">
           {steps.map((s, k) => (
-            <li key={k} className="flex gap-1.5"><span aria-hidden className="opacity-50">•</span><span className="line-clamp-2">{s}</span></li>
+            <li key={k} className="flex gap-1.5"><span aria-hidden className="opacity-50">•</span><span className="line-clamp-2"><RichText text={s} links={false} /></span></li>
           ))}
         </ul>
       </TooltipContent>

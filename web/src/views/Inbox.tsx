@@ -1,6 +1,7 @@
 import { ExternalLinkIcon, GitPullRequestIcon, KanbanIcon, ListIcon, MessageSquareIcon, RotateCwIcon, SparkleIcon } from "lucide-react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
 import * as React from "react"
+import { RichText } from "@/components/rich-text"
 import { RollingNumber } from "@/components/rolling-number"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
@@ -118,7 +119,7 @@ function Card({ item: i, now, open, onPick, onAsk, row, as = "article" }: {
           <SparkleIcon className={cn("mt-0.5 size-3.5 shrink-0", tone(i.state).dot, row && "mt-0")} aria-hidden />
           <span className={cn(row && "truncate")}>{i.title}</span>
         </span>
-        {!row && (i.ask?.summary ?? i.detail) && <span className="line-clamp-2 text-[13px] leading-snug text-muted-foreground">{i.ask?.summary ?? i.detail}</span>}
+        {!row && (i.ask?.summary ?? i.detail) && <span className="line-clamp-2 text-[13px] leading-snug text-muted-foreground"><RichText text={(i.ask?.summary ?? i.detail)!} links={false} /></span>}
         {row && <span className="hidden w-24 truncate text-xs text-muted-foreground sm:block">{lane(i)}</span>}
         <span className={cn("flex items-center gap-3 text-xs text-muted-foreground", !row && "mt-0.5")}>
           <Status item={i} now={now} />
@@ -184,11 +185,11 @@ function Steps({ item, now, onAsk }: { item: Item; now: number; onAsk: () => voi
             <motion.li key={e.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: k * 0.04 }}
               className="flex items-start gap-2 text-[13px]">
               <span aria-hidden className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", k === events.length - 1 ? "bg-foreground" : "bg-muted-foreground/50")} />
-              <span className={cn("min-w-0 flex-1", k !== events.length - 1 && "text-muted-foreground")}>{e.text || e.verb}</span>
+              <span className={cn("min-w-0 flex-1 break-words", k !== events.length - 1 && "text-muted-foreground")}><RichText text={e.text || e.verb} /></span>
               <span className="shrink-0 text-xs text-muted-foreground">{ago(e.ts, now)}</span>
             </motion.li>
           ))}
-          {!events.length && <li className="text-xs text-muted-foreground">{item.detail ?? "No steps recorded"}</li>}
+          {!events.length && <li className="text-xs text-muted-foreground"><RichText text={item.detail ?? "No steps recorded"} /></li>}
         </ol>
       )}
       <div className="flex justify-end gap-2">
