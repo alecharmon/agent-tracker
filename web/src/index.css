@@ -167,3 +167,15 @@
 @media (prefers-reduced-motion: reduce) {
   .agents-sweep { animation: none; display: none; }
 }
+
+/* Hand-off streams: dashes flow from the sender to the receiver. */
+@keyframes agents-flow {
+  to { stroke-dashoffset: -14; }
+}
+.agents-flow {
+  stroke-dasharray: 3 4;
+  animation: agents-flow 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agents-flow { animation: none; }
+}
