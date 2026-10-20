@@ -14,6 +14,9 @@ type Win = keyof typeof WINDOWS
 const ROW = 40 // px per bar row
 const GAP = 8
 const LANE_PAD = 10
+const MIN_BLOCK = 36 // px
+const curve = (x1: number, y1: number, x2: number, y2: number, k: number) =>
+  `M ${x1} ${y1} C ${x1 + k} ${y1}, ${x2 - k} ${y2}, ${x2} ${y2}`
 
 /** Greedy interval packing: overlapping blocks in one lane go to the next row. */
 function pack(items: Item[], now: number) {
@@ -56,6 +59,15 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
     // ponytail: re-pack on data change only; `now` drift between polls doesn't reorder rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.data])
+  const track = React.useRef<HTMLDivElement>(null)
+  const [width, setWidth] = React.useState(0)
+  React.useLayoutEffect(() => {
+    const el = track.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const eventsBy = React.useMemo(() => Map.groupBy(t.data?.events ?? [], (e) => e.item_id), [t.data])
   const items = t.data?.items ?? []
   const byId = new Map(items.map((i) => [i.id, i]))
@@ -121,22 +133,35 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
           </div>
 
           {/* The track fades out at the left edge: blocks drift off it as time moves. */}
-          <div className="relative [mask-image:linear-gradient(to_right,transparent,black_5%)]" style={{ height: layout.height }}>
+          <div ref={track} className="relative [mask-image:linear-gradient(to_right,transparent,black_5%)]" style={{ height: layout.height }}>
             {layout.lanes.map((l) => (
               <div key={l.name} aria-hidden className="absolute inset-x-0 border-t first:border-t-0" style={{ top: l.top }} />
             ))}
             {ticks.map((m) => (
               <span key={m} aria-hidden className="absolute inset-y-0 border-l border-dashed border-border/70" style={{ left: `${(1 - m / minutes) * 100}%` }} />
             ))}
-            <svg aria-hidden className="pointer-events-none absolute inset-0 size-full overflow-visible" viewBox={`0 0 100 ${layout.height || 1}`} preserveAspectRatio="none">
-              {items.filter((i) => i.handoff_from && byId.has(i.handoff_from)).map((i) => {
+            {/* Hand-offs: a dashed stream from the end of one block into the start of the next, drawn in pixels
+                so the curve keeps its shape, and moved on the same 1s linear clock as the blocks. */}
+            <svg aria-hidden className="pointer-events-none absolute inset-0 size-full overflow-visible">
+              {width > 0 && items.filter((i) => i.handoff_from && byId.has(i.handoff_from)).map((i) => {
                 const p = byId.get(i.handoff_from!)!
-                const x1 = x(endOf(p, now)), y1 = layout.pos.get(p.id)!, x2 = x(startOf(i)), y2 = layout.pos.get(i.id)!
-                const mid = (x1 + x2) / 2
+                const px = (pct: number) => (pct / 100) * width
+                const pl = px(x(startOf(p)))
+                const x1 = Math.max(px(x(endOf(p, now))), pl + MIN_BLOCK), y1 = layout.pos.get(p.id)!
+                const x2 = px(x(startOf(i))), y2 = layout.pos.get(i.id)!
+                const k = Math.max(14, Math.abs(x2 - x1) / 2)
                 return (
-                  <motion.path key={i.id} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`}
-                    initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.8, ease: "easeOut" }}
-                    fill="none" stroke="currentColor" className="text-blue-500/60" strokeWidth={1.5} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                  <motion.path
+                    key={i.id}
+                    initial={{ opacity: 0, d: curve(x1, y1, x2, y2, k) }}
+                    animate={{ opacity: 1, d: curve(x1, y1, x2, y2, k) }}
+                    transition={{ d: { duration: 1, ease: "linear" }, opacity: { duration: 0.4 } }}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    className="agents-flow text-blue-400/70"
+                  />
                 )
               })}
             </svg>
@@ -155,6 +180,9 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
   )
 }
 
+// Blocks grow into "now" and drift left on a 1s linear clock; hand-off streams use the same one.
+const tick = { duration: 1, ease: "linear" } as const
+
 function Block({ item: i, lane, events, now, left, right, top, onAsk }: {
   item: Item; lane: string; events: TrackerEvent[]; now: number; left: number; right: number; top: number; onAsk: () => void
 }) {
@@ -167,19 +195,17 @@ function Block({ item: i, lane, events, now, left, right, top, onAsk }: {
           <motion.button
             type="button"
             onClick={i.state === "needs_me" ? onAsk : undefined}
-            initial={{ opacity: 0, scaleX: 0.85 }}
-            animate={{ opacity: 1, scaleX: 1 }}
-            transition={{ type: "spring", stiffness: 260, damping: 30 }}
+            initial={{ opacity: 0, scaleX: 0.85, left: `${left}%`, width: `${right - left}%` }}
+            animate={{ opacity: 1, scaleX: 1, left: `${left}%`, width: `${right - left}%` }}
+            transition={{ left: tick, width: tick, default: { type: "spring", stiffness: 260, damping: 30 } }}
             className={cn(
               "absolute flex origin-left items-center gap-1.5 overflow-hidden rounded-md border px-2.5 text-left text-[13px] font-medium whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              // Blocks glide as the clock ticks: they grow into "now", then drift left.
-              "transition-[left,width] duration-1000 ease-linear",
               tone(i.state).bar,
               live && "border-r-2",
               i.state === "underway" && "border-r-blue-400",
               i.state === "needs_me" && "cursor-pointer border-r-amber-400",
             )}
-            style={{ top, height: ROW, left: `${left}%`, width: `max(2.25rem, ${right - left}%)` }}
+            style={{ top, height: ROW, minWidth: MIN_BLOCK }}
             aria-label={`${i.title}: ${STATE_LABEL[i.state]}${i.state === "needs_me" ? ", open to respond" : ""}`}
           />
         }
