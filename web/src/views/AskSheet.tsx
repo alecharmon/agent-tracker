@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { StateIcon } from "./states"
 
 const OTHER = "__other"
+const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl "
 type Answers = Record<string, { option?: string; other?: string }>
 
 /** Needs-you detail: what the agent needs, its questions as choices (or your own words), and free feedback. */
@@ -63,7 +64,14 @@ function AskBody({ item, onDone }: { item: Item; onDone: () => void }) {
 
   const steps = (detail?.events ?? []).slice(0, 4).reverse()
   return (
-    <form onSubmit={submit} className="flex min-h-full flex-col">
+    <form
+      onSubmit={submit}
+      // ⌘↵ / Ctrl↵ sends from any field, including the text boxes.
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), e.currentTarget.requestSubmit())
+      }}
+      className="flex min-h-full flex-col"
+    >
       <SheetHeader className="gap-2 border-b p-5">
         <span className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
           <StateIcon state="needs_me" className="size-3" /> Needs you · waiting {duration(item.updated_at ?? item.last_seen, now)}
@@ -157,7 +165,7 @@ function AskBody({ item, onDone }: { item: Item; onDone: () => void }) {
         <Button type="submit" disabled={!ready || status.busy || status.sent} className="min-w-28">
           <AnimatePresence mode="wait" initial={false}>
             <motion.span key={status.sent ? "sent" : "send"} initial={{ y: 6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -6, opacity: 0 }} className="flex items-center gap-1.5">
-              {status.sent ? <><CheckIcon className="size-4" aria-hidden /> Sent</> : status.busy ? "Sending…" : "Send answer"}
+              {status.sent ? <><CheckIcon className="size-4" aria-hidden /> Sent</> : status.busy ? "Sending…" : <>Send answer <kbd className="ml-1 rounded bg-primary-foreground/15 px-1 font-sans text-[11px]" aria-hidden>{mod}↵</kbd></>}
             </motion.span>
           </AnimatePresence>
         </Button>
