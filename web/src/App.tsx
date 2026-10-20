@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { type Item, getToken, setToken, Unauthorized, usePoll } from "@/lib/api"
+import { ViewToolbar } from "@/components/view-toolbar"
+import { apply, DEFAULT_OPTIONS, type ViewOptions } from "@/lib/view-options"
 import { AskSheet } from "@/views/AskSheet"
 import { Inbox } from "@/views/Inbox"
 import { Lanes } from "@/views/Lanes"
@@ -16,6 +18,7 @@ export default function App() {
   const [asking, setAsking] = React.useState<Item | null>(null)
   // Answered items move to Running right away; the next poll confirms it.
   const [moved, setMoved] = React.useState<Record<string, string>>({})
+  const [opts, setOpts] = React.useState<ViewOptions>(DEFAULT_OPTIONS)
   React.useEffect(() => {
     const on = () => setView(readView())
     addEventListener("hashchange", on)
@@ -38,12 +41,13 @@ export default function App() {
             <ToggleGroupItem value="lanes">Lanes</ToggleGroupItem>
           </ToggleGroup>
         </nav>
+        <ViewToolbar items={all} value={opts} onChange={setOpts} />
         {items.error && !items.data ? (
           <p role="alert" className="text-sm text-destructive">Could not load: {items.error.message}</p>
         ) : view === "inbox" ? (
-          <Inbox items={all} loading={!items.data} onAsk={setAsking} />
+          <Inbox items={apply(all, opts)} loading={!items.data} onAsk={setAsking} />
         ) : (
-          <Lanes onAsk={setAsking} />
+          <Lanes onAsk={setAsking} options={opts} />
         )}
       </div>
       <AskSheet item={asking} onClose={() => setAsking(null)} onAnswered={(id) => setMoved((m) => ({ ...m, [id]: "answered" }))} />

@@ -6,11 +6,24 @@ import { RollingNumber } from "@/components/rolling-number"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { duration, harnessLabel, type Item, type Session, STATE_LABEL, type TrackerEvent, useNow, usePoll } from "@/lib/api"
+import { apply, type ViewOptions } from "@/lib/view-options"
 import { cn } from "@/lib/utils"
 import { ProviderMark, StateIcon, tone } from "./states"
 
-const WINDOWS = { "30": "Last 30m", "120": "Last 2h", "1440": "Last 24h" } as const
-type Win = keyof typeof WINDOWS
+const PRESETS = [30, 120, 1440] // minutes
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"
+const MIN_SPAN = 5
+const MAX_SPAN = 7 * 1440
+// Fetch in coarse buckets so zooming doesn't refetch on every wheel tick.
+const BUCKETS = [30, 120, 360, 1440, 4320, MAX_SPAN]
+const spanLabel = (m: number) => (m < 120 ? `${Math.round(m)}m` : m < 2880 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`)
+/** ~5 evenly spaced ticks on round numbers of minutes. */
+function ticksFor(minutes: number) {
+  const step = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880].find((s) => minutes / s <= 6) ?? 2880
+  const out: number[] = []
+  for (let m = step; m < minutes * 0.97; m += step) out.push(m)
+  return out
+}
 const ROW = 36 // px per segment row
 const GAP = 6
 const PAD = 9
@@ -19,7 +32,10 @@ const LIVE = ["underway", "needs_me", "answered"]
 const curve = (x1: number, y1: number, x2: number, y2: number, k: number) =>
   `M ${x1} ${y1} C ${x1 + k} ${y1}, ${x2 - k} ${y2}, ${x2} ${y2}`
 // Segments grow into "now" and drift left on a 1s linear clock; hand-off streams use the same one.
-const tick = { duration: 1, ease: "linear" } as const
+// While zooming, they follow the wheel instead.
+const TICK = { duration: 1, ease: "linear" } as const
+const ZOOM = { duration: 0.12, ease: "easeOut" } as const
+type Motion = typeof TICK | typeof ZOOM
 
 type Seg = { s: Session; task: Item; start: number; end: number; latest: boolean }
 
@@ -45,10 +61,26 @@ function order(items: Item[]) {
   return out
 }
 
-export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
-  const [win, setWin] = React.useState<Win>("30")
-  const minutes = Number(win)
-  const t = usePoll<{ items: Item[]; sessions: Session[]; events: TrackerEvent[] }>(`/api/timeline?minutes=${minutes}`, 5_000)
+export function Lanes({ onAsk, options }: { onAsk: (i: Item) => void; options: ViewOptions }) {
+  const [minutes, setMinutes] = React.useState(30)
+  const fetchMinutes = BUCKETS.find((b) => b >= minutes) ?? MAX_SPAN
+  const t = usePoll<{ items: Item[]; sessions: Session[]; events: TrackerEvent[] }>(`/api/timeline?minutes=${fetchMinutes}`, 5_000)
+  // ⌘/Ctrl + scroll (and trackpad pinch, which arrives as ctrl+wheel) zooms; the right edge stays "now".
+  const card = React.useRef<HTMLDivElement>(null)
+  const lastZoom = React.useRef(0)
+  React.useEffect(() => {
+    const el = card.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.metaKey && !e.ctrlKey) return
+      e.preventDefault()
+      lastZoom.current = Date.now()
+      setMinutes((m) => Math.min(Math.max(m * Math.exp(e.deltaY * 0.004), MIN_SPAN), MAX_SPAN))
+    }
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [])
+  const tick: Motion = Date.now() - lastZoom.current < 400 ? ZOOM : TICK
   const now = useNow(1_000)
   const span = minutes * 60_000
   const from = now - span
@@ -64,7 +96,7 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
   // Time -> px, with blocks kept inside the track: a short block near "now" ends at the edge, not past it.
   const px = (ms: number) => ((Math.min(Math.max(ms, from), now) - from) / span) * width
 
-  const items = t.data?.items ?? []
+  const items = apply(t.data?.items ?? [], options)
   const sessions = t.data?.sessions ?? []
   const byTask = Map.groupBy(sessions, (s) => s.task_id)
   const rows = order(items).map(({ item, depth }) => {
@@ -76,6 +108,8 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
     })
     return { item, depth, packed: pack(segs) }
   })
+    // The fetch bucket can be wider than the zoomed view: keep only tasks visible in it.
+    .filter((r) => LIVE.includes(r.item.state) || r.packed.flat().some((g) => g.end >= from))
   let y = 0
   const laid = rows.map((r) => {
     const height = PAD * 2 + Math.max(r.packed.length, 1) * ROW + (Math.max(r.packed.length, 1) - 1) * GAP
@@ -119,8 +153,8 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
   const eventsBy = Map.groupBy(t.data?.events ?? [], (e) => e.session_id ?? `${e.item_id}#0`)
   const running = items.filter((i) => i.state === "underway").length
   const needs = items.filter((i) => i.state === "needs_me").length
-  const ticks = [5, 4, 3, 2, 1].map((k) => (k * minutes) / 6)
-  const fmt = (m: number) => (m >= 120 ? `−${Math.round(m / 60)}h` : `−${Math.round(m)}m`)
+  const ticks = ticksFor(minutes)
+  const fmt = (m: number) => `−${m >= 1440 && m % 1440 === 0 ? `${m / 1440}d` : m >= 60 && m % 60 === 0 ? `${m / 60}h` : `${m}m`}`
 
   return (
     <section aria-label="Task lanes" className="flex flex-col gap-3 rounded-2xl border bg-card/40 p-4 sm:p-5">
@@ -133,12 +167,16 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
         <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
           <span className="size-1.5 rounded-full bg-amber-500" aria-hidden /><RollingNumber value={needs} /> need you
         </span>
-        <ToggleGroup className="ml-auto" value={[win]} onValueChange={(v) => v[0] && setWin(v[0] as Win)} size="sm" variant="outline">
-          {Object.entries(WINDOWS).map(([k, label]) => <ToggleGroupItem key={k} value={k}>{label}</ToggleGroupItem>)}
+        <span className="ml-auto hidden text-xs text-muted-foreground sm:inline">
+          <kbd className="rounded border px-1 font-sans">{MOD}</kbd> + scroll to zoom · last <span className="tabular-nums text-foreground">{spanLabel(minutes)}</span>
+        </span>
+        <ToggleGroup value={PRESETS.includes(minutes) ? [String(minutes)] : []}
+          onValueChange={(v) => v[0] && setMinutes(Number(v[0]))} size="sm" variant="outline">
+          {PRESETS.map((m) => <ToggleGroupItem key={m} value={String(m)}>{spanLabel(m)}</ToggleGroupItem>)}
         </ToggleGroup>
       </header>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <div ref={card} className="overflow-x-auto rounded-xl border bg-card">
         <div className="grid min-w-[720px] grid-cols-[17rem_1fr] px-4 pt-3 pb-2">
           <div />
           <div className="relative h-6 text-xs text-muted-foreground tabular-nums">
@@ -196,7 +234,7 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
               ))}
             </svg>
             {width > 0 && [...geo.values()].map(({ x1, x2, cy, seg }) => (
-              <Block key={seg.s.id} seg={seg} events={eventsBy.get(seg.s.id) ?? []} now={now} track={width}
+              <Block key={seg.s.id} seg={seg} events={eventsBy.get(seg.s.id) ?? []} now={now} track={width} tick={tick}
                 left={x1} width={x2 - x1} top={cy - ROW / 2} onAsk={() => onAsk(seg.task)} />
             ))}
           </div>
@@ -208,8 +246,8 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
 
 const NARROW = 110 // px: below this a block can't hold its label, so the label sits beside it
 
-function Block({ seg, events, now, left, width, top, track, onAsk }: {
-  seg: Seg; events: TrackerEvent[]; now: number; left: number; width: number; top: number; track: number; onAsk: () => void
+function Block({ seg, events, now, left, width, top, track, tick, onAsk }: {
+  seg: Seg; events: TrackerEvent[]; now: number; left: number; width: number; top: number; track: number; tick: Motion; onAsk: () => void
 }) {
   const { s, task, latest } = seg
   // Only the session holding the task now carries its state; earlier stints read as finished.

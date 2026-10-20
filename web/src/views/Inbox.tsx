@@ -14,24 +14,15 @@ const COLUMNS = [
   { key: "running", title: "Running", states: ["answered", "underway"], dot: "text-blue-500" },
   { key: "done", title: "Done", states: ["landed"], dot: "text-emerald-500" },
 ]
-const FILTERS = [
-  { key: "all", title: "All", states: null },
-  ...COLUMNS,
-  { key: "gated", title: "Parked", states: ["gated", "idle", "unknown"] },
-]
 const spring = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const
 
 export function Inbox({ items, loading, onAsk }: { items: Item[]; loading: boolean; onAsk: (i: Item) => void }) {
   const [mode, setMode] = React.useState<"board" | "list">("board")
-  const [filter, setFilter] = React.useState("all")
   const [open, setOpen] = React.useState<string | null>(null)
   const now = useNow(1_000)
   const toggle = (id: string) => setOpen((o) => (o === id ? null : id))
   const pick = (i: Item) => (i.state === "needs_me" ? onAsk(i) : toggle(i.id))
 
-  const counts = Object.fromEntries(FILTERS.map((f) => [f.key, f.states ? items.filter((i) => f.states!.includes(i.state)).length : items.length]))
-  const listed = FILTERS.find((f) => f.key === filter)?.states
-  const rows = listed ? items.filter((i) => listed.includes(i.state)) : items
 
   return (
     <section aria-label="Agent inbox" className="flex flex-col gap-4 rounded-2xl border bg-card/40 p-4 sm:p-5">
@@ -72,20 +63,9 @@ export function Inbox({ items, loading, onAsk }: { items: Item[]; loading: boole
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              <div role="tablist" aria-label="Filter" className="flex flex-wrap gap-1">
-                {FILTERS.map((f) => (
-                  <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => setFilter(f.key)}
-                    className={cn("relative flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm text-muted-foreground transition-colors hover:text-foreground",
-                      filter === f.key && "text-foreground")}>
-                    {filter === f.key && <motion.span layoutId="filter-pill" transition={spring} className="absolute inset-0 rounded-md bg-muted" />}
-                    <span className="relative">{f.title}</span>
-                    <RollingNumber value={counts[f.key]} className="relative text-xs text-muted-foreground" />
-                  </button>
-                ))}
-              </div>
               <ul className="flex flex-col gap-1.5">
                 <AnimatePresence initial={false} mode="popLayout">
-                  {rows.map((i) => (
+                  {items.map((i) => (
                     <Card key={i.id} as="li" item={i} now={now} open={open === i.id} onPick={() => pick(i)} onAsk={() => onAsk(i)} row />
                   ))}
                 </AnimatePresence>
