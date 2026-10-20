@@ -1,0 +1,16 @@
+{
+  // Personal Cloudflare account: npm scripts set XDG_CONFIG_HOME=~/.config/wrangler-personal
+  // so this never uses the work login. No deploys until the captain says so.
+  "name": "agent-tracker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-15",
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": { "bindings": [{ "name": "TRACKER", "class_name": "Tracker" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Tracker"] }]
+  // Secrets: TRACKER_TOKEN (required).
+}
