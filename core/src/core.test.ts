@@ -74,3 +74,34 @@ test("timeline returns active items and windowed events", async () => {
   assert.deepEqual(t.items.map((i) => i.native_id).sort(), ["one", "three"]);
   assert.equal(t.events.length, 3);
 });
+
+test("stub seeds replace their own events instead of piling up", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const { stubPayloads } = await import("./fixtures.ts");
+  for (const at of [now, new Date(now.getTime() + 60_000)]) for (const p of stubPayloads(at)) await ingest(db, p);
+  assert.equal((await db.all("SELECT count(*) n FROM events"))[0].n, 14);
+});
+
+test("respond: validates against the ask, records it, moves the item to running", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const { stubPayloads } = await import("./fixtures.ts");
+  const { respond } = await import("./store.ts");
+  for (const p of stubPayloads(now)) await ingest(db, p);
+  await assert.rejects(respond(db, "migrate-users-table", { action: "answer", answers: { run: { option: "nope" } } }), /unknown option/);
+  await assert.rejects(respond(db, "migrate-users-table", { action: "answer", answers: { backup: { other: "x" } } }), /no free text/);
+  await assert.rejects(respond(db, "migrate-users-table", { action: "answer" }), /answer a question/);
+  await assert.rejects(respond(db, "draft-pricing-page", { action: "answer", feedback: "hi" }), /not waiting/);
+  const r = await respond(db, "migrate-users-table", {
+    action: "answer", answers: { run: { option: "window" }, backup: { option: "yes" } }, feedback: "ping me after",
+  });
+  assert.ok(r && "item" in r);
+  assert.equal(r.item.state, "underway");
+  assert.equal(r.responses[0].answers!.run.option, "window");
+  assert.match(r.events[0].text, /maintenance window; Yes, snapshot first; "ping me after"/);
+  const retry = await respond(db, "sync-crm", { action: "retry" });
+  assert.ok(retry && "item" in retry && retry.item.state === "underway");
+  const tl = await (await import("./store.ts")).timeline(db, new Date(now.getTime() - 3600_000).toISOString());
+  assert.equal(tl.items.find((i) => i.native_id === "draft-pricing-page")!.handoff_from, "herdr:stub/herdr:competitor-pricing");
+});
