@@ -4,7 +4,8 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { Trace, TraceDescription, TraceLine, TraceTitle } from "@/components/ui/trace"
 import { ago, api, duration, type Item, type ItemDetail, lane, respond, useNow } from "@/lib/api"
@@ -15,22 +16,46 @@ const OTHER = "__other"
 const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl "
 type Answers = Record<string, { option?: string; other?: string }>
 
-/** Needs-you detail: what the agent needs, its questions as choices (or your own words), and free feedback. */
+function useWide(query = "(min-width: 768px)") {
+  const [wide, setWide] = React.useState(() => matchMedia(query).matches)
+  React.useEffect(() => {
+    const m = matchMedia(query)
+    const on = () => setWide(m.matches)
+    m.addEventListener("change", on)
+    return () => m.removeEventListener("change", on)
+  }, [query])
+  return wide
+}
+
+/**
+ * Needs-you detail: what the agent needs, its questions as choices (or your own words), and free feedback.
+ * A centered modal on wider screens, a full-height sheet on phones.
+ */
 export function AskSheet({ item, onClose, onAnswered }: {
   item: Item | null
   onClose: () => void
   onAnswered: (id: string) => void
 }) {
-  return (
-    <Sheet open={!!item} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full gap-0 overflow-y-auto p-0 data-[side=right]:sm:max-w-lg">
-        {item && <AskBody key={item.id} item={item} onDone={() => (onAnswered(item.id), onClose())} />}
-      </SheetContent>
+  const wide = useWide()
+  const body = item && (
+    <AskBody key={item.id} item={item} onDone={() => (onAnswered(item.id), onClose())}
+      Title={wide ? DialogTitle : SheetTitle} Description={wide ? DialogDescription : SheetDescription} />
+  )
+  const onOpenChange = (o: boolean) => !o && onClose()
+  return wide ? (
+    <Dialog open={!!item} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[min(85vh,52rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">{body}</DialogContent>
+    </Dialog>
+  ) : (
+    <Sheet open={!!item} onOpenChange={onOpenChange}>
+      <SheetContent className="gap-0 p-0 data-[side=right]:w-full">{body}</SheetContent>
     </Sheet>
   )
 }
 
-function AskBody({ item, onDone }: { item: Item; onDone: () => void }) {
+type Slot = React.ComponentType<{ className?: string; children?: React.ReactNode }>
+
+function AskBody({ item, onDone, Title, Description }: { item: Item; onDone: () => void; Title: Slot; Description: Slot }) {
   const now = useNow(1_000)
   const [detail, setDetail] = React.useState<ItemDetail | null>(null)
   const [answers, setAnswers] = React.useState<Answers>({})
@@ -70,17 +95,17 @@ function AskBody({ item, onDone }: { item: Item; onDone: () => void }) {
       onKeyDown={(e) => {
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), e.currentTarget.requestSubmit())
       }}
-      className="flex min-h-full flex-col"
+      className="flex min-h-0 flex-1 flex-col"
     >
-      <SheetHeader className="gap-2 border-b p-5">
+      <header className="flex shrink-0 flex-col gap-2 border-b p-5 pr-12">
         <span className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
           <StateIcon state="needs_me" className="size-3" /> Needs you · waiting {duration(item.updated_at ?? item.last_seen, now)}
         </span>
-        <SheetTitle className="text-base">{item.title}</SheetTitle>
-        <SheetDescription>{[lane(item), item.model, item.repo].filter(Boolean).join(" · ")}</SheetDescription>
-      </SheetHeader>
+        <Title className="text-base font-semibold">{item.title}</Title>
+        <Description className="text-sm text-muted-foreground">{[lane(item), item.model, item.repo].filter(Boolean).join(" · ")}</Description>
+      </header>
 
-      <div className="flex flex-1 flex-col gap-6 p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">What's needed</h3>
           <p className="text-sm leading-relaxed text-pretty">{ask?.summary ?? item.detail ?? "The agent is waiting on you."}</p>
@@ -159,7 +184,7 @@ function AskBody({ item, onDone }: { item: Item; onDone: () => void }) {
         )}
       </div>
 
-      <SheetFooter className="sticky bottom-0 flex-row items-center justify-end gap-2 border-t bg-popover p-4">
+      <footer className="flex shrink-0 items-center justify-end gap-2 border-t bg-popover p-4">
         {status.error && <p role="alert" className="mr-auto text-xs text-destructive">{status.error}</p>}
         <p role="status" className="sr-only">{status.sent ? "Answer sent" : ""}</p>
         <Button type="submit" disabled={!ready || status.busy || status.sent} className="min-w-28">
@@ -169,7 +194,7 @@ function AskBody({ item, onDone }: { item: Item; onDone: () => void }) {
             </motion.span>
           </AnimatePresence>
         </Button>
-      </SheetFooter>
+      </footer>
     </form>
   )
 }
