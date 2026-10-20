@@ -1,6 +1,8 @@
 import {
-  type Db, getItem, ingest, listItems, listPrs, respond, STATES, summary, timeline, validatePayload,
+  type Db, getItem, ingest, listItems, listPrs, respond, STATES, summary, taskAnswer, taskAsk, taskFinish, taskStart,
+  taskUpdate, timeline, validatePayload,
 } from "@agent-tracker/core";
+import { mcp } from "./mcp.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -10,7 +12,27 @@ export async function api(db: Db, req: Request): Promise<Response> {
   const url = new URL(req.url);
   const q = Object.fromEntries(url.searchParams);
   const path = url.pathname.replace(/\/+$/, "");
+  if (path === "/mcp") return mcp(db, req);
   try {
+    // Agent task API (the CLI's `agents task …`; MCP tools call the same core functions).
+    if (req.method === "POST" && path === "/api/tasks") return json(await taskStart(db, await req.json()), 201);
+    const task = path.match(/^\/api\/tasks\/(.+)\/(update|ask|answers|done)$/);
+    if (task) {
+      const id = decodeURIComponent(task[1]);
+      if (task[2] === "answers" && req.method === "GET") {
+        const until = Date.now() + Math.min(Math.max(Number(q.wait ?? 0), 0), 50) * 1000;
+        for (;;) {
+          const r = await taskAnswer(db, id);
+          if (r.status !== "pending" || Date.now() >= until) return json(r);
+          await new Promise((res) => setTimeout(res, 2000));
+        }
+      }
+      if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+      const body: any = await req.json();
+      if (task[2] === "update") return json(await taskUpdate(db, id, body));
+      if (task[2] === "ask") return json(await taskAsk(db, id, body));
+      if (task[2] === "done") return json(await taskFinish(db, id, body));
+    }
     if (req.method === "POST" && path === "/api/ingest") {
       const body: unknown = await req.json();
       const payloads = Array.isArray(body) ? body : [body];
@@ -44,6 +66,6 @@ export async function api(db: Db, req: Request): Promise<Response> {
     return json({ error: "not found" }, 404);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return json({ error: msg }, /payload|bad item|bad event|bad response|JSON/.test(msg) ? 400 : 500);
+    return json({ error: msg }, /^not found/.test(msg) ? 404 : /payload|bad item|bad event|bad response|bad task|JSON/.test(msg) ? 400 : 500);
   }
 }

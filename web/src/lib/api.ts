@@ -1,8 +1,8 @@
-import type { Ask, Item, Pr, ResponseIn, TrackerEvent, TrackerResponse } from "@agent-tracker/core"
+import type { Ask, Item, Pr, ResponseIn, Session, TrackerEvent, TrackerResponse } from "@agent-tracker/core"
 import * as React from "react"
 
-export type { Ask, Item, Pr, ResponseIn, TrackerEvent, TrackerResponse }
-export type ItemDetail = { item: Item; events: TrackerEvent[]; prs: Pr[]; responses: TrackerResponse[] }
+export type { Ask, Item, Pr, ResponseIn, Session, TrackerEvent, TrackerResponse }
+export type ItemDetail = { item: Item; events: TrackerEvent[]; prs: Pr[]; responses: TrackerResponse[]; sessions: Session[] }
 
 const KEY = "agents-token"
 const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname)
@@ -94,18 +94,24 @@ export function ago(iso: string | null, now: number) {
 export const lane = (i: Item) => i.agent ?? i.owner ?? i.source
 /** When an item stops on the timeline: live ones run to now. */
 export const endOf = (i: Item, now: number) =>
-  ["underway", "needs_me"].includes(i.state) ? now : Date.parse(i.updated_at ?? i.last_seen)
+  ["underway", "needs_me", "answered"].includes(i.state) ? now : Date.parse(i.updated_at ?? i.last_seen)
 export const startOf = (i: Item) => Date.parse(i.started_at ?? i.first_seen)
 
+const HARNESS: Record<string, string> = {
+  "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi", devin: "Devin", firstmate: "Firstmate", herdr: "Herdr",
+}
+export const harnessLabel = (h: string) => HARNESS[h] ?? h.replace(/^./, (c) => c.toUpperCase())
+
 /** Provider mark for a model name: Anthropic, OpenAI, Google or generic. */
-export function provider(model: string | null) {
-  const m = (model ?? "").toLowerCase()
+export function provider(model: string | null, harness?: string | null) {
+  const m = `${model ?? ""} ${harness ?? ""}`.toLowerCase()
   if (/opus|sonnet|haiku|claude|fable/.test(m)) return "anthropic"
+  if (/devin|swe-/.test(m)) return "devin"
   if (/gpt|o\d|openai|codex/.test(m)) return "openai"
   if (/gemini/.test(m)) return "google"
   return "other"
 }
 
 export const STATE_LABEL: Record<string, string> = {
-  needs_me: "Needs you", failed: "Failed", underway: "Running", landed: "Done", gated: "Gated", idle: "Idle", unknown: "Unknown",
+  needs_me: "Needs you", answered: "Answered", failed: "Failed", underway: "Running", landed: "Done", gated: "Gated", idle: "Idle", unknown: "Unknown",
 }

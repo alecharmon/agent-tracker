@@ -5,13 +5,13 @@ import { RichText } from "@/components/rich-text"
 import { RollingNumber } from "@/components/rolling-number"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { ago, api, duration, endOf, type Item, type ItemDetail, lane, respond, STATE_LABEL, useNow } from "@/lib/api"
+import { ago, api, duration, endOf, harnessLabel, type Item, type ItemDetail, lane, respond, STATE_LABEL, useNow } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { StateIcon, tone } from "./states"
+import { ProviderMark, StateIcon, tone } from "./states"
 
 const COLUMNS = [
   { key: "needs", title: "Needs you", states: ["needs_me", "failed"], dot: "text-amber-500" },
-  { key: "running", title: "Running", states: ["underway"], dot: "text-blue-500" },
+  { key: "running", title: "Running", states: ["answered", "underway"], dot: "text-blue-500" },
   { key: "done", title: "Done", states: ["landed"], dot: "text-emerald-500" },
 ]
 const FILTERS = [
@@ -119,10 +119,20 @@ function Card({ item: i, now, open, onPick, onAsk, row, as = "article" }: {
           <SparkleIcon className={cn("mt-0.5 size-3.5 shrink-0", tone(i.state).dot, row && "mt-0")} aria-hidden />
           <span className={cn(row && "truncate")}>{i.title}</span>
         </span>
-        {!row && (i.ask?.summary ?? i.detail) && <span className="line-clamp-2 text-[13px] leading-snug text-muted-foreground"><RichText text={(i.ask?.summary ?? i.detail)!} links={false} /></span>}
-        {row && <span className="hidden w-24 truncate text-xs text-muted-foreground sm:block">{lane(i)}</span>}
+        {!row && summaryOf(i) && <span className="line-clamp-2 text-[13px] leading-snug text-muted-foreground"><RichText text={summaryOf(i)!} links={false} /></span>}
+        {row && <span className="hidden w-24 truncate text-xs text-muted-foreground sm:block">{i.repo ?? lane(i)}</span>}
         <span className={cn("flex items-center gap-3 text-xs text-muted-foreground", !row && "mt-0.5")}>
           <Status item={i} now={now} />
+          {i.harnesses.length > 0 && (
+            <span className="flex shrink-0 -space-x-1" title={`Worked on by ${i.harnesses.map(harnessLabel).join(", ")}`}>
+              {i.harnesses.map((h) => (
+                <span key={h} className="flex size-4 items-center justify-center rounded-full border bg-card">
+                  <ProviderMark harness={h} model={null} className="size-2.5" />
+                </span>
+              ))}
+              <span className="sr-only">Worked on by {i.harnesses.map(harnessLabel).join(", ")}</span>
+            </span>
+          )}
           <span className={cn("flex items-center gap-1", !row && "ml-auto")} title="Status events">
             <ListIcon className="size-3.5" aria-hidden />{i.event_count}<span className="sr-only"> events</span>
           </span>
@@ -148,11 +158,15 @@ function Card({ item: i, now, open, onPick, onAsk, row, as = "article" }: {
   )
 }
 
+/** The ask explains a waiting card; once answered, the latest line is what matters. */
+const summaryOf = (i: Item) => (i.state === "needs_me" ? i.ask?.summary ?? i.detail : i.detail)
+
 function Status({ item: i, now }: { item: Item; now: number }) {
   const t = tone(i.state)
   const text =
     i.state === "failed" ? "Failed"
     : i.state === "needs_me" ? `Waiting ${duration(i.updated_at ?? i.last_seen, now)}`
+    : i.state === "answered" ? `Answered · unread ${duration(i.updated_at ?? i.last_seen, now)}`
     : duration(i.started_at ?? i.first_seen, endOf(i, now)) || STATE_LABEL[i.state]
   return (
     <span className={cn("flex min-w-0 items-center gap-1.5 font-medium tabular-nums", t.text)}>

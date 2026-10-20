@@ -46,7 +46,7 @@ export default function App() {
           <Lanes onAsk={setAsking} />
         )}
       </div>
-      <AskSheet item={asking} onClose={() => setAsking(null)} onAnswered={(id) => setMoved((m) => ({ ...m, [id]: "underway" }))} />
+      <AskSheet item={asking} onClose={() => setAsking(null)} onAnswered={(id) => setMoved((m) => ({ ...m, [id]: "answered" }))} />
     </TooltipProvider>
   )
 }

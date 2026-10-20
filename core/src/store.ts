@@ -15,18 +15,23 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS items (
     id TEXT PRIMARY KEY, source TEXT NOT NULL, home TEXT NOT NULL, native_id TEXT NOT NULL,
     kind TEXT NOT NULL, state TEXT NOT NULL, title TEXT NOT NULL, detail TEXT, repo TEXT, owner TEXT, agent TEXT, model TEXT,
-    url TEXT, started_at TEXT, updated_at TEXT, handoff_from TEXT, ask TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+    url TEXT, started_at TEXT, updated_at TEXT, handoff_from TEXT, ask TEXT, parent_id TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
     present INTEGER NOT NULL DEFAULT 1, raw TEXT)`,
   `CREATE INDEX IF NOT EXISTS items_scope ON items (source, home)`,
   `CREATE INDEX IF NOT EXISTS items_state ON items (state, present)`,
   `CREATE TABLE IF NOT EXISTS events (
-    id TEXT PRIMARY KEY, item_id TEXT NOT NULL, ts TEXT, verb TEXT NOT NULL, text TEXT NOT NULL)`,
+    id TEXT PRIMARY KEY, item_id TEXT NOT NULL, ts TEXT, verb TEXT NOT NULL, text TEXT NOT NULL, session_id TEXT)`,
+  // One agent's stint on a task. A task collects sessions as it moves between agents.
+  `CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY, task_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT, machine TEXT, agent TEXT,
+    started_at TEXT NOT NULL, last_seen TEXT NOT NULL, ended_at TEXT)`,
+  `CREATE INDEX IF NOT EXISTS sessions_task ON sessions (task_id, started_at)`,
   `CREATE INDEX IF NOT EXISTS events_item ON events (item_id, ts)`,
   `CREATE TABLE IF NOT EXISTS prs (
     url TEXT PRIMARY KEY, item_id TEXT NOT NULL, verb TEXT, sha TEXT, seen_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS responses (
     id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, at TEXT NOT NULL,
-    action TEXT NOT NULL, answers TEXT, feedback TEXT)`,
+    action TEXT NOT NULL, answers TEXT, feedback TEXT, delivered_at TEXT, acked_at TEXT)`,
   `CREATE TABLE IF NOT EXISTS ingests (
     id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, home TEXT NOT NULL, at TEXT NOT NULL,
     items INTEGER NOT NULL, events INTEGER NOT NULL)`,
@@ -101,11 +106,12 @@ export async function ingest(db: Db, p: IngestPayload, now = new Date().toISOStr
   return { items: p.items.length, events: p.events?.length ?? 0 };
 }
 
-const ITEM_COLS = `id, source, home, native_id, kind, state, title, detail, repo, owner, agent, model, url, started_at, updated_at, handoff_from, ask, first_seen, last_seen, present,
+const ITEM_COLS = `id, source, home, native_id, kind, state, title, detail, repo, owner, agent, model, url, started_at, updated_at, handoff_from, ask, parent_id, first_seen, last_seen, present,
   (SELECT count(*) FROM events WHERE events.item_id = items.id) AS event_count,
-  (SELECT count(*) FROM prs WHERE prs.item_id = items.id) AS pr_count`;
+  (SELECT count(*) FROM prs WHERE prs.item_id = items.id) AS pr_count,
+  (SELECT group_concat(harness) FROM (SELECT DISTINCT harness FROM sessions WHERE sessions.task_id = items.id)) AS harnesses`;
 
-const parseItem = (r: any): Item => ({ ...r, ask: r.ask ? JSON.parse(r.ask) : null });
+const parseItem = (r: any): Item => ({ ...r, ask: r.ask ? JSON.parse(r.ask) : null, harnesses: r.harnesses ? String(r.harnesses).split(",") : [] });
 
 export async function listItems(db: Db, f: ItemFilter = {}): Promise<Item[]> {
   const where: string[] = [], params: unknown[] = [];
@@ -123,28 +129,38 @@ export async function listItems(db: Db, f: ItemFilter = {}): Promise<Item[]> {
   params.push(Math.min(f.limit ?? 500, 2000));
   const rows = await db.all(
     `SELECT ${ITEM_COLS} FROM items ${where.length ? "WHERE " + where.join(" AND ") : ""}
-     ORDER BY CASE state WHEN 'needs_me' THEN 0 WHEN 'failed' THEN 1 WHEN 'underway' THEN 2 WHEN 'gated' THEN 3 WHEN 'landed' THEN 4 ELSE 5 END,
+     ORDER BY CASE state WHEN 'needs_me' THEN 0 WHEN 'failed' THEN 1 WHEN 'answered' THEN 2 WHEN 'underway' THEN 3 WHEN 'gated' THEN 4 WHEN 'landed' THEN 5 ELSE 6 END,
        coalesce(updated_at, last_seen) DESC LIMIT ?`,
     params,
   );
   return rows.map(parseItem);
 }
 
+export interface ItemDetail {
+  item: Item & { raw: unknown };
+  events: TrackerEvent[];
+  prs: Pr[];
+  sessions: Session[];
+  responses: TrackerResponse[];
+}
+
 /** Accepts a full id or a unique native id. */
-export async function getItem(db: Db, idOrNative: string) {
+export async function getItem(db: Db, idOrNative: string): Promise<ItemDetail | { ambiguous: string[] } | null> {
   const rows = await db.all<Item & { raw: string | null }>(
     `SELECT ${ITEM_COLS}, raw FROM items WHERE id = ? OR native_id = ? LIMIT 2`, [idOrNative, idOrNative]);
   if (rows.length !== 1) return rows.length ? { ambiguous: rows.map((r) => r.id) } : null;
   const item = rows[0];
-  const [events, prs, responses] = await Promise.all([
+  const [events, prs, responses, sessions] = await Promise.all([
     db.all<TrackerEvent>(`SELECT * FROM events WHERE item_id = ? ORDER BY ts DESC, rowid DESC LIMIT 200`, [item.id]),
     db.all<Pr>(`SELECT * FROM prs WHERE item_id = ? ORDER BY seen_at DESC`, [item.id]),
     db.all(`SELECT * FROM responses WHERE item_id = ? ORDER BY id DESC`, [item.id]),
+    db.all<Session>(`SELECT * FROM sessions WHERE task_id = ? ORDER BY started_at`, [item.id]),
   ]);
   return {
     item: { ...parseItem(item), raw: item.raw ? JSON.parse(item.raw) : null },
     events,
     prs,
+    sessions,
     responses: responses.map((r): TrackerResponse => ({ ...r, answers: r.answers ? JSON.parse(r.answers) : undefined } as TrackerResponse)),
   };
 }
@@ -161,15 +177,41 @@ export async function summary(db: Db): Promise<Summary> {
   return { counts: Object.fromEntries(rows.map((r) => [r.state, Number(r.n)])), last_ingest: last };
 }
 
-/** Items active since `since` (plus anything still running or waiting) with their events in the window. */
+export interface Session {
+  id: string;
+  task_id: string;
+  harness: string;
+  model: string | null;
+  machine: string | null;
+  agent: string | null;
+  started_at: string;
+  last_seen: string;
+  ended_at: string | null;
+}
+
+/**
+ * Tasks active since `since` (plus anything still live), their sessions and windowed events.
+ * Items no agent reports on (snapshot/stub sources) get one synthetic session spanning their life.
+ */
 export async function timeline(db: Db, since: string) {
   const items = (await db.all(
     `SELECT ${ITEM_COLS} FROM items WHERE present = 1 AND
-       (state IN ('underway', 'needs_me', 'failed') OR coalesce(updated_at, last_seen) >= ?)
-     ORDER BY coalesce(agent, title), coalesce(started_at, first_seen)`, [since])).map(parseItem);
-  const events = await db.all<TrackerEvent>(
-    `SELECT * FROM events WHERE ts >= ? ORDER BY ts`, [since]);
-  return { since, items, events };
+       (state IN ('underway', 'needs_me', 'answered', 'failed') OR coalesce(updated_at, last_seen) >= ?)
+     ORDER BY coalesce(started_at, first_seen)`, [since])).map(parseItem);
+  const ids = items.map((i) => i.id);
+  const real = ids.length
+    ? await db.all<Session>(`SELECT * FROM sessions WHERE task_id IN (${ids.map(() => "?").join(",")}) ORDER BY started_at`, ids)
+    : [];
+  const has = new Set(real.map((s) => s.task_id));
+  const sessions: Session[] = [
+    ...real,
+    ...items.filter((i) => !has.has(i.id)).map((i): Session => ({
+      id: `${i.id}#0`, task_id: i.id, harness: i.source, model: i.model, machine: i.home, agent: i.agent,
+      started_at: i.started_at ?? i.first_seen, last_seen: i.updated_at ?? i.last_seen, ended_at: null,
+    })),
+  ];
+  const events = await db.all<TrackerEvent>(`SELECT * FROM events WHERE ts >= ? ORDER BY ts`, [since]);
+  return { since, items, sessions, events };
 }
 
 export function validateResponse(r: any, item: Item): asserts r is ResponseIn {
@@ -192,8 +234,8 @@ export function validateResponse(r: any, item: Item): asserts r is ResponseIn {
 }
 
 /**
- * Record the captain's answer (or a retry) and move the item back to running.
- * ponytail: stored only; delivering it to the agent comes with the live sources.
+ * Record the captain's answer (or a retry). The item becomes "answered" until the agent reads it
+ * (taskAnswer), which acknowledges it and moves the item back to running.
  */
 export async function respond(db: Db, idOrNative: string, r: unknown, now = new Date().toISOString()) {
   const found = await getItem(db, idOrNative);
@@ -204,7 +246,7 @@ export async function respond(db: Db, idOrNative: string, r: unknown, now = new 
   await db.batch([
     { sql: `INSERT INTO responses (item_id, at, action, answers, feedback) VALUES (?,?,?,?,?)`,
       params: [item.id, now, r.action, r.answers ? JSON.stringify(r.answers) : null, r.feedback?.trim() || null] },
-    { sql: `UPDATE items SET state = 'underway', updated_at = ?, detail = ? WHERE id = ?`, params: [now, `RESPONDED: ${summary}`, item.id] },
+    { sql: `UPDATE items SET state = 'answered', updated_at = ?, detail = ? WHERE id = ?`, params: [now, `RESPONDED: ${summary}`, item.id] },
     { sql: `INSERT OR IGNORE INTO events (id, item_id, ts, verb, text) VALUES (?,?,?,?,?)`,
       params: [hash(`${item.id}|${now}|response`), item.id, now, r.action === "retry" ? "RETRY" : "RESPONDED", summary] },
   ]);

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs, styleText } from "node:util";
 import { type Item, stubPayloads } from "@agent-tracker/core";
+import { task, TASK_USAGE } from "./task.ts";
 
 const USAGE = `agents — track agent work
 
@@ -14,6 +15,7 @@ const USAGE = `agents — track agent work
   agents timeline [--minutes 30]
   agents summary
   agents seed               load the stub fleet into the backend (local dev)
+  agents task …             for agents: start | update | ask | answers | done | fail (agents task help)
 
   --json    raw JSON output
   env: AGENTS_URL (default http://localhost:8787), AGENTS_TOKEN
@@ -46,7 +48,7 @@ async function call(path: string, init: RequestInit = {}) {
 }
 
 const COLOR: Record<string, Parameters<typeof styleText>[0]> = {
-  needs_me: "yellow", failed: "red", underway: "cyan", gated: "magenta", landed: "green", idle: "gray", unknown: "gray",
+  needs_me: "yellow", answered: "magenta", failed: "red", underway: "cyan", gated: "magenta", landed: "green", idle: "gray", unknown: "gray",
 };
 const LABEL: Record<string, string> = { needs_me: "needs me", underway: "running", landed: "done" };
 const tty = process.stdout.isTTY;
@@ -80,6 +82,11 @@ async function main(argv: string[]) {
       json: { type: "boolean" }, all: { type: "boolean" }, help: { type: "boolean", short: "h" },
       state: { type: "string" }, agent: { type: "string" }, source: { type: "string" }, home: { type: "string" },
       repo: { type: "string" }, q: { type: "string", short: "q" }, minutes: { type: "string" },
+      // agents task
+      detail: { type: "string" }, model: { type: "string" }, key: { type: "string" }, parent: { type: "string" }, url: { type: "string" }, task: { type: "string" },
+      wait: { type: "string" }, harness: { type: "string" }, session: { type: "string" }, "ask-json": { type: "string" },
+      question: { type: "string", multiple: true }, option: { type: "string", short: "o", multiple: true },
+      "no-other": { type: "boolean" }, dispatch: { type: "boolean" },
     },
   });
   if (o.help || cmd === "help") return console.log(USAGE);
@@ -135,6 +142,10 @@ async function main(argv: string[]) {
       const r = await call("/api/ingest", { method: "POST", body: JSON.stringify(stubPayloads()) });
       return out(r, () => r.results.forEach((x: any) => console.log(`seeded ${x.source}/${x.home}: ${x.items} items, ${x.events} events`)));
     }
+    case "task":
+      if (!rest.length || rest[0] === "help") return console.log(TASK_USAGE);
+      // Agents read JSON best; -q/-o order matters, so the raw argv is passed through.
+      return task(call, rest, o, argv, (r) => console.log(JSON.stringify(r)));
     default:
       throw new Error(`unknown command ${cmd}\n\n${USAGE}`);
   }

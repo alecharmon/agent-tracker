@@ -6,6 +6,8 @@ export interface Env {
   TRACKER: DurableObjectNamespace<Tracker>;
   ASSETS: Fetcher;
   TRACKER_TOKEN: string;
+  /** Local dev only: "1" skips the bearer check. */
+  AUTH_DISABLED?: string;
 }
 
 /** One instance ("main") holds all data in its SQLite storage: a strongly consistent single writer. */
@@ -41,8 +43,9 @@ async function authorized(req: Request, token: string | undefined) {
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
-    if (!new URL(req.url).pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
-    if (!(await authorized(req, env.TRACKER_TOKEN)))
+    const path = new URL(req.url).pathname;
+    if (!path.startsWith("/api/") && path !== "/mcp") return env.ASSETS.fetch(req);
+    if (env.AUTH_DISABLED !== "1" && !(await authorized(req, env.TRACKER_TOKEN)))
       return Response.json({ error: "unauthorized" }, { status: 401 });
     return env.TRACKER.get(env.TRACKER.idFromName("main")).fetch(req);
   },

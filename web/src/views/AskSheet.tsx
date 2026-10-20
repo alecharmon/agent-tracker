@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { Trace, TraceDescription, TraceLine, TraceTitle } from "@/components/ui/trace"
-import { ago, api, duration, type Item, type ItemDetail, lane, respond, useNow } from "@/lib/api"
+import { ago, api, duration, harnessLabel, type Item, type ItemDetail, lane, respond, useNow } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { StateIcon } from "./states"
 
@@ -103,7 +103,7 @@ function AskBody({ item, onDone, Title, Description }: { item: Item; onDone: () 
           <StateIcon state="needs_me" className="size-3" /> Needs you · waiting {duration(item.updated_at ?? item.last_seen, now)}
         </span>
         <Title className="text-base font-semibold">{item.title}</Title>
-        <Description className="text-sm text-muted-foreground">{[lane(item), item.model, item.repo].filter(Boolean).join(" · ")}</Description>
+        <Description className="text-sm text-muted-foreground">{[item.repo, item.harnesses.map(harnessLabel).join(" → ") || lane(item), item.model].filter(Boolean).join(" · ")}</Description>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">

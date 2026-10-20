@@ -1,4 +1,4 @@
-export const STATES = ["underway", "needs_me", "failed", "gated", "landed", "idle", "unknown"] as const;
+export const STATES = ["underway", "needs_me", "answered", "failed", "gated", "landed", "idle", "unknown"] as const;
 export type State = (typeof STATES)[number];
 
 /** What a needs-you item is asking the captain. */
@@ -25,6 +25,10 @@ export interface TrackerResponse extends ResponseIn {
   id: number;
   item_id: string;
   at: string;
+  /** First time the agent read it. */
+  delivered_at: string | null;
+  /** The agent's next tracker call after reading: proof it got it. Until then the item stays "answered". */
+  acked_at: string | null;
 }
 
 export interface ItemIn {
@@ -82,11 +86,15 @@ export interface Item {
   updated_at: string | null;
   handoff_from: string | null;
   ask: Ask | null;
+  /** Task that dispatched this one (e.g. a first mate's task), if any. */
+  parent_id: string | null;
   first_seen: string;
   last_seen: string;
   present: number;
   event_count: number;
   pr_count: number;
+  /** Harnesses whose sessions worked on this task. */
+  harnesses: string[];
 }
 
 export interface TrackerEvent {
@@ -95,6 +103,8 @@ export interface TrackerEvent {
   ts: string | null;
   verb: string;
   text: string;
+  /** Agent session that reported it; null for the captain's own actions and for snapshot sources. */
+  session_id: string | null;
 }
 
 export interface Pr {
