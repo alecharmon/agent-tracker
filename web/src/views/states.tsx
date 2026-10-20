@@ -1,4 +1,4 @@
-import { AlertTriangleIcon, AsteriskIcon, BotIcon, CircleAlertIcon, CircleIcon, ApertureIcon, LoaderCircleIcon, PauseIcon, SparkleIcon } from "lucide-react"
+import { AlertTriangleIcon, AsteriskIcon, MailCheckIcon, WavesIcon, BotIcon, CircleAlertIcon, CircleIcon, ApertureIcon, LoaderCircleIcon, PauseIcon, SparkleIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { provider } from "@/lib/api"
 
@@ -14,6 +14,12 @@ export const TONE: Record<string, { bar: string; text: string; dot: string }> = 
     text: "text-amber-600 dark:text-amber-400",
     dot: "text-amber-500",
   },
+  // Captain answered; the agent hasn't picked it up yet.
+  answered: {
+    bar: "border-violet-500/30 bg-linear-to-r from-violet-500/10 to-violet-500/25 text-violet-700 dark:text-violet-200",
+    text: "text-violet-600 dark:text-violet-400",
+    dot: "text-violet-500",
+  },
   failed: {
     bar: "border-red-500/30 bg-linear-to-r from-red-500/10 to-red-500/25 text-red-700 dark:text-red-300",
     text: "text-red-600 dark:text-red-400",
@@ -28,16 +34,18 @@ export function StateIcon({ state, className }: { state: string; className?: str
   const c = cn("size-3.5 shrink-0", className)
   if (state === "underway") return <LoaderCircleIcon className={cn(c, "animate-spin [animation-duration:1.6s]")} aria-hidden />
   if (state === "needs_me") return <AlertTriangleIcon className={c} aria-hidden />
+  if (state === "answered") return <MailCheckIcon className={c} aria-hidden />
   if (state === "failed") return <CircleAlertIcon className={c} aria-hidden />
   if (state === "landed") return <CircleIcon className={cn(c, "size-2 fill-current")} aria-hidden />
   return <PauseIcon className={c} aria-hidden />
 }
 
-export function ProviderMark({ model, className }: { model: string | null; className?: string }) {
-  const p = provider(model)
+export function ProviderMark({ model, harness, className }: { model: string | null; harness?: string | null; className?: string }) {
+  const p = provider(model, harness)
   const c = cn("size-4", className)
   if (p === "anthropic") return <AsteriskIcon className={cn(c, "text-orange-500")} strokeWidth={2.5} aria-hidden />
   if (p === "openai") return <ApertureIcon className={c} aria-hidden />
+  if (p === "devin") return <WavesIcon className={cn(c, "text-teal-500")} aria-hidden />
   if (p === "google") return <SparkleIcon className={cn(c, "fill-blue-500 text-blue-500")} aria-hidden />
   return <BotIcon className={c} aria-hidden />
 }
