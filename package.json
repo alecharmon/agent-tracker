@@ -1,0 +1,7 @@
+{
+  "name": "agent-tracker",
+  "private": true,
+  "type": "module",
+  "workspaces": ["core", "cli", "worker", "web", "raycast"],
+  "engines": { "node": ">=22.18" }
+}
