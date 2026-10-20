@@ -24,7 +24,7 @@ export async function api(db: Db, req: Request): Promise<Response> {
         for (;;) {
           const r = await taskAnswer(db, id);
           if (r.status !== "pending" || Date.now() >= until) return json(r);
-          await new Promise((res) => setTimeout(res, 2000));
+          await new Promise((res) => setTimeout(res, Math.min(2000, Math.max(until - Date.now(), 0))));
         }
       }
       if (req.method !== "POST") return json({ error: "method not allowed" }, 405);

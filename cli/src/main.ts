@@ -40,6 +40,7 @@ async function call(path: string, init: RequestInit = {}) {
     ...init,
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers },
   }).catch((e) => {
+    if (e?.name === "TimeoutError" || e?.name === "AbortError") throw e;
     throw new Error(`cannot reach ${url} (${e.cause?.code ?? e.message}). Is \`npm run dev -w @agent-tracker/worker\` running?`);
   });
   const body: any = await res.json();
