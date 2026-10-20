@@ -115,8 +115,18 @@ export async function task(call: Call, args: string[], flags: Record<string, any
       const ask = flags["ask-json"] ? JSON.parse(flags["ask-json"]) : { summary: text, questions: askFromFlags(raw, !!flags["no-other"]) };
       return print(await post(`/api/tasks/${enc(currentTask(flags.task))}/ask`, ask));
     }
-    case "answers":
-      return print(await call(`/api/tasks/${enc(currentTask(flags.task))}/answers?wait=${Number(flags.wait ?? 25)}`));
+    case "answers": {
+      const id = currentTask(flags.task);
+      const wait = Math.min(Math.max(Number(flags.wait ?? 25), 0), 50);
+      // Never outlive the wait: a dropped long-poll (server reload, flaky network) must not hang the agent's
+      // tool call past its timeout. The answer stays on the server, so "call again" loses nothing.
+      try {
+        return print(await call(`/api/tasks/${enc(id)}/answers?wait=${wait}`, { signal: AbortSignal.timeout((wait + 3) * 1000) }));
+      } catch (e: any) {
+        if (!/abort|timeout|cannot reach|fetch failed/i.test(`${e?.name} ${e?.message}`)) throw e;
+        return print({ task_id: id, status: "pending", note: "No reply from the tracker in time; call `agents task answers` again." });
+      }
+    }
     case "done":
     case "fail": {
       if (!text) throw new Error(`usage: agents task ${sub} "<text>"`);

@@ -196,7 +196,7 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
               ))}
             </svg>
             {width > 0 && [...geo.values()].map(({ x1, x2, cy, seg }) => (
-              <Block key={seg.s.id} seg={seg} events={eventsBy.get(seg.s.id) ?? []} now={now}
+              <Block key={seg.s.id} seg={seg} events={eventsBy.get(seg.s.id) ?? []} now={now} track={width}
                 left={x1} width={x2 - x1} top={cy - ROW / 2} onAsk={() => onAsk(seg.task)} />
             ))}
           </div>
@@ -206,8 +206,10 @@ export function Lanes({ onAsk }: { onAsk: (i: Item) => void }) {
   )
 }
 
-function Block({ seg, events, now, left, width, top, onAsk }: {
-  seg: Seg; events: TrackerEvent[]; now: number; left: number; width: number; top: number; onAsk: () => void
+const NARROW = 110 // px: below this a block can't hold its label, so the label sits beside it
+
+function Block({ seg, events, now, left, width, top, track, onAsk }: {
+  seg: Seg; events: TrackerEvent[]; now: number; left: number; width: number; top: number; track: number; onAsk: () => void
 }) {
   const { s, task, latest } = seg
   // Only the session holding the task now carries its state; earlier stints read as finished.
@@ -215,7 +217,19 @@ function Block({ seg, events, now, left, width, top, onAsk }: {
   const live = latest && LIVE.includes(task.state)
   const steps = (events.length ? events.slice(-3).map((e) => e.text || e.verb) : [task.detail ?? ""]).filter(Boolean)
   const who = s.id.endsWith("#0") ? (s.agent ?? harnessLabel(s.harness)) : harnessLabel(s.harness)
+  const narrow = width < NARROW
+  // Beside the block: to its right, or to its left when it hugs "now".
+  const side = left + width + 6 + 160 > track ? { right: track - left + 6 } : { left: left + width + 6 }
+  const label = <>{who}{s.model ? <span className="font-normal opacity-70"> · {s.model}</span> : null}</>
   return (
+    <>
+    {narrow && (
+      <motion.span aria-hidden initial={false} animate={side} transition={{ left: tick, right: tick }}
+        className="pointer-events-none absolute flex max-w-40 items-center truncate text-xs font-medium whitespace-nowrap text-muted-foreground"
+        style={{ top, height: ROW }}>
+        <span className="truncate">{label}</span>
+      </motion.span>
+    )}
     <Tooltip>
       <TooltipTrigger
         render={
@@ -240,8 +254,8 @@ function Block({ seg, events, now, left, width, top, onAsk }: {
       >
         {state === "underway" && <span aria-hidden className="agents-sweep pointer-events-none absolute inset-0" />}
         <ProviderMark harness={s.harness} model={s.model} className="relative size-3.5" />
-        <span className="relative truncate">{who}{s.model ? <span className="font-normal opacity-70"> · {s.model}</span> : null}</span>
-        {state === "needs_me" && (
+        {!narrow && <span className="relative truncate">{label}</span>}
+        {state === "needs_me" && !narrow && (
           <span className="relative ml-auto hidden shrink-0 items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 sm:flex">
             <AlertTriangleIcon className="size-3" aria-hidden /> Needs you
           </span>
@@ -260,5 +274,6 @@ function Block({ seg, events, now, left, width, top, onAsk }: {
         </ul>
       </TooltipContent>
     </Tooltip>
+    </>
   )
 }

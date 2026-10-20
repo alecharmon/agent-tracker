@@ -130,7 +130,7 @@ async function callTool(db: Db, name: string, a: any, client: string | undefined
       for (;;) {
         const r = await taskAnswer(db, a.task_id);
         if (r.status !== "pending" || Date.now() >= until) return r;
-        await sleep(2000);
+        await sleep(Math.min(2000, Math.max(until - Date.now(), 0)));
       }
     }
     case "task_done":

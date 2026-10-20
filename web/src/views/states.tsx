@@ -43,6 +43,9 @@ export function StateIcon({ state, className }: { state: string; className?: str
 export function ProviderMark({ model, harness, className }: { model: string | null; harness?: string | null; className?: string }) {
   const p = provider(model, harness)
   const c = cn("size-4", className)
+  // Pi is a harness, not a model vendor: show its own mark whatever model it runs.
+  if (harness === "pi" && !model)
+    return <span aria-hidden className={cn(c, "flex items-center justify-center font-serif text-[0.8em] leading-none font-semibold text-violet-500")}>π</span>
   if (p === "anthropic") return <AsteriskIcon className={cn(c, "text-orange-500")} strokeWidth={2.5} aria-hidden />
   if (p === "openai") return <ApertureIcon className={c} aria-hidden />
   if (p === "devin") return <WavesIcon className={cn(c, "text-teal-500")} aria-hidden />
