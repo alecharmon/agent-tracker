@@ -1,6 +1,7 @@
 import { CheckIcon } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import * as React from "react"
+import { RichText } from "@/components/rich-text"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -108,7 +109,7 @@ function AskBody({ item, onDone, Title, Description }: { item: Item; onDone: () 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">What's needed</h3>
-          <p className="text-sm leading-relaxed text-pretty">{ask?.summary ?? item.detail ?? "The agent is waiting on you."}</p>
+          <p className="text-sm leading-relaxed text-pretty"><RichText text={ask?.summary ?? item.detail ?? "The agent is waiting on you."} /></p>
         </section>
 
         {steps.length > 0 && (
@@ -117,7 +118,7 @@ function AskBody({ item, onDone, Title, Description }: { item: Item; onDone: () 
             <Trace>
               {steps.map((e) => (
                 <TraceLine key={e.id} className="w-full items-start">
-                  <TraceTitle className="min-w-0 flex-1 whitespace-normal">{e.text || e.verb}</TraceTitle>
+                  <TraceTitle className="min-w-0 flex-1 break-words whitespace-normal"><RichText text={e.text || e.verb} /></TraceTitle>
                   <TraceDescription className="shrink-0">{ago(e.ts, now)}</TraceDescription>
                 </TraceLine>
               ))}
