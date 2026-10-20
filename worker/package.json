@@ -1,0 +1,19 @@
+{
+  "name": "@agent-tracker/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "XDG_CONFIG_HOME=$HOME/.config/wrangler-personal wrangler dev --port 8787",
+    "deploy": "XDG_CONFIG_HOME=$HOME/.config/wrangler-personal wrangler deploy",
+    "login": "XDG_CONFIG_HOME=$HOME/.config/wrangler-personal wrangler login",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent-tracker/core": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.8.0",
+    "wrangler": "4.110.0"
+  }
+}

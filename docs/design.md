@@ -39,12 +39,9 @@ The stored data is small: hundreds to low thousands of rows.
 
 The plan is **DO first**: one `Tracker` DO named `"main"`.
 
-The storage logic is plain SQL behind a tiny `Db` interface (`all`, `run`, `batch`). The same `store.ts` runs on:
-- DO `ctx.storage.sql`;
-- `@libsql/client`, for the **Turso adapter**, which the Worker selects when `TURSO_URL` is set;
-- `node:sqlite`, for the tests.
+The storage logic is plain SQL behind a tiny `Db` interface (`all`, `batch`). The same `store.ts` runs on DO `ctx.storage.sql` and on `node:sqlite` in the tests.
 
-So Turso costs about 20 lines, not a second implementation.
+**Turso is deferred** at the captain's call. A libSQL adapter is about 20 lines against `Db` whenever it's wanted.
 
 ## Ingest flow
 `agents sync`, run on the Mac by hand or from launchd every 5 minutes, works like this:
@@ -68,6 +65,5 @@ The collector only reads over ssh. It never writes to either host and never fetc
 - **The web dashboard** is Vite, React, Tailwind and shadcn (base-nova style). [ReUI](https://reui.io) components such as Trace (`@reui/c-trace-4`) show each item as a parent row over its event children. It is built as static files and served by the same Worker through `assets`.
 
 ## Cost
-Requests, at about 300/day from a 5-minute sync plus casual reads, stay far below the free plan's 100k/day. DO storage stays well under 1 GB. The expected cost is **$0** on Workers Free or within the Workers Paid baseline. Turso's free tier also covers this.
-
+Requests, at about 300/day from a 5-minute sync plus casual reads, stay far below the free plan's 100k/day. DO storage stays well under 1 GB. The expected cost is **$0** on Workers Free or within the Workers Paid baseline. 
 **Account:** this runs on the captain's **personal** Cloudflare account, not florafauna. The repo's wrangler scripts set `XDG_CONFIG_HOME=~/.config/wrangler-personal`, so the work login stays untouched. One-time login: `XDG_CONFIG_HOME=~/.config/wrangler-personal npx wrangler login`. Nothing is deployed until the captain says so; development uses `wrangler dev` locally.
