@@ -78,6 +78,17 @@ const statusOf = (e: any): string | undefined => {
   return typeof s === "string" ? s : s?.type
 }
 
+
+/** Everything delivered from the session inbox, as one message; names each task when there are several. */
+function inboxMessage(entries: { task_id: string; title: string; answer: any; messages: { text: string }[] }[]) {
+  const parts = entries.map((e) => {
+    const body = (answerMessage({ status: e.answer ? "answered" : "none", answers: e.answer?.answers, feedback: e.answer?.feedback, captain_messages: e.messages }) ?? "")
+      .split("\n").filter((l) => !l.startsWith("Act on exactly this")).join("\n")
+    return entries.length > 1 ? `For task "${e.title}" (task_id ${e.task_id}):\n${body}` : `${body}\n(task "${e.title}", task_id ${e.task_id})`
+  })
+  return parts.length ? [...parts, "Act on exactly this now (the captain's own words take precedence over your options), then keep each task updated."].join("\n\n") : null
+}
+
 export default Plugin.define({
   id: "agent-tracker",
   setup(ctx: any) {
@@ -85,7 +96,8 @@ export default Plugin.define({
     const watchers = new Map<string, AbortController>()
     const base = (sid: string) => `/api/agent-sessions/opencode/${enc(sid)}`
 
-    async function watch(sid: string, taskId: string) {
+    // Watches every task this session owns or dispatched: an answer or follow-up on any of them prompts it.
+    async function watch(sid: string) {
       watchers.get(sid)?.abort()
       const ac = new AbortController()
       watchers.set(sid, ac)
@@ -93,15 +105,15 @@ export default Plugin.define({
       while (!ac.signal.aborted && Date.now() < deadline) {
         let p: any
         try {
-          p = await call(`/api/tasks/${enc(taskId)}/pending?wait=25`, { signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35_000)]) })
+          p = await call(`${base(sid)}/inbox?wait=25`, { signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35_000)]) })
         } catch {
           if (ac.signal.aborted) break
           await new Promise((r) => setTimeout(r, 3000))
           continue
         }
         if (ac.signal.aborted) break
-        if (p.answer === "ready" || p.messages > 0) {
-          const msg = answerMessage(await call(`/api/tasks/${enc(taskId)}/answers`))
+        if (p.pending > 0) {
+          const msg = inboxMessage((await call(`${base(sid)}/inbox`, { method: "POST" })).entries)
           log("wake", sid)
           if (msg) await ctx.session.prompt({ sessionID: sid, text: msg })
           break
@@ -141,7 +153,7 @@ export default Plugin.define({
             if (!t?.task_id) continue
             if (!t.waiting) await call(`${base(sid)}/idle`, { method: "POST" })
             // Watch in any state: the captain's answer or a follow-up prompts the session.
-            void watch(sid, t.task_id)
+            void watch(sid)
           }
         } catch (e) {
           log("error", String(e))

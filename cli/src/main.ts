@@ -19,6 +19,10 @@ const USAGE = `agnt-trkr — track agent work
   agnt-trkr token              print a fresh access token (for plugins and scripts)
   agnt-trkr config [get <key> | set <key> <value> | unset <key>]   per-machine settings: url, machine
                             (machine: how this machine shows on tasks; default whoami@hostname)
+  agnt-trkr inbox [--source s] [--home h] [--wait <secs>|forever] [--peek]
+                            answers and messages waiting for a source that seeds items (e.g. firstmate);
+                            claims them (delivered once) and prints JSON. Exit 0 = something delivered, 3 = nothing.
+  agnt-trkr rm <id>…           delete items/tasks and their history (stray test tasks)
   agnt-trkr seed               load the stub fleet into the backend (local dev)
   agnt-trkr task …             for agents: start | update | ask | answers | done | fail (agnt-trkr task help)
   agnt-trkr hook <claude-code|codex|devin> <session-start|prompt|stop|session-end>   harness hook handler (stdin: hook JSON)
@@ -95,7 +99,7 @@ async function main(argv: string[]) {
       wait: { type: "string" }, harness: { type: "string" }, session: { type: "string" }, "ask-json": { type: "string" },
       question: { type: "string", multiple: true }, option: { type: "string", short: "o", multiple: true },
       "no-other": { type: "boolean" }, dispatch: { type: "boolean" }, status: { type: "string" }, note: { type: "string" },
-      remote: { type: "boolean" }, machine: { type: "string" },
+      remote: { type: "boolean" }, machine: { type: "string" }, peek: { type: "boolean" },
     },
   });
   if (o.help || cmd === "help") return console.log(USAGE);
@@ -166,6 +170,42 @@ async function main(argv: string[]) {
       const t = await bearer(config().url);
       if (!t) throw new Error("not signed in: run `agnt-trkr login`");
       return console.log(t);
+    }
+    case "rm": {
+      if (!rest.length) throw new Error("usage: agnt-trkr rm <id>…");
+      for (const id of rest) console.log(JSON.stringify(await call(`/api/items/${encodeURIComponent(id)}`, { method: "DELETE" })));
+      return;
+    }
+    case "inbox": {
+      // For external systems that seed items (fleet snapshots, the collector): a watcher runs this and wakes
+      // whatever should act. Long-polls in <=50s slices; --wait forever keeps going (and rides out restarts).
+      const qs = new URLSearchParams();
+      if (o.source) qs.set("source", o.source);
+      if (o.home) qs.set("home", o.home);
+      const forever = o.wait === "forever";
+      const until = Date.now() + (forever ? Infinity : Math.max(Number(o.wait ?? 0), 0) * 1000);
+      for (;;) {
+        const left = Math.min(50, Math.max(0, Math.floor((until - Date.now()) / 1000)));
+        qs.set("wait", String(left));
+        let p: any;
+        try {
+          p = await call(`/api/inbox?${qs}`, { signal: AbortSignal.timeout((left + 10) * 1000) });
+        } catch (e) {
+          if (!forever) throw e;
+          await new Promise((r) => setTimeout(r, 5000));
+          continue;
+        }
+        if (p.pending > 0) {
+          const entries = o.peek ? p.entries : await call(`/api/inbox?${qs}`, { method: "POST" });
+          console.log(JSON.stringify({ pending: entries.length, claimed: !o.peek, entries }));
+          return;
+        }
+        if (Date.now() >= until) {
+          if (o.json) console.log(JSON.stringify({ pending: 0, entries: [] }));
+          process.exitCode = 3;
+          return;
+        }
+      }
     }
     case "config": {
       const [sub, key, ...val] = rest;

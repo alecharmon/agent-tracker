@@ -1,6 +1,7 @@
 import {
-  captainMessage, captainStage, type Db, getItem, ingest, listItems, listPrs, respond, sessionSignal, sessionTask, STATES,
-  summary, taskAnswer, taskAsk, taskFinish, taskPending, taskPr, taskStart, taskUpdate, timeline, validatePayload,
+  captainMessage, captainStage, type Db, deleteItem, getItem, ingest, listItems, listPrs, respond, sessionSignal, sessionTask, STATES,
+  sessionInbox, sourceInbox, summary, taskAnswer, taskAsk, taskFinish, taskPending, taskPr, taskStart, taskUpdate, timeline,
+  validatePayload,
 } from "@agent-tracker/core";
 import { mcp } from "./mcp.ts";
 
@@ -45,6 +46,30 @@ export async function api(db: Db, req: Request): Promise<Response> {
       if (task[2] === "pr") return json(await taskPr(db, id, body));
     }
     // Harness hooks address sessions by the harness's own session id.
+    // Long-poll helper: re-check `f` every 2s until `ready`, or the deadline.
+    const poll = async <T>(wait: unknown, f: () => Promise<T>, ready: (r: T) => boolean) => {
+      const until = Date.now() + Math.min(Math.max(Number(wait ?? 0), 0), 50) * 1000;
+      for (;;) {
+        const r = await f();
+        if (ready(r) || Date.now() >= until) return r;
+        await new Promise((res) => setTimeout(res, Math.min(2000, Math.max(until - Date.now(), 0))));
+      }
+    };
+    // Everything waiting for one harness session, across all the tasks it owns and dispatched.
+    const sessInbox = path.match(/^\/api\/agent-sessions\/([^/]+)\/([^/]+?)\/inbox$/);
+    if (sessInbox) {
+      const [, harness, ext] = sessInbox.map((x) => x && decodeURIComponent(x));
+      if (req.method === "POST") return json(await sessionInbox(db, harness, ext, { deliver: true }));
+      const r = await poll(q.wait, () => sessionInbox(db, harness, ext), (x) => x.entries.length > 0);
+      return json({ tasks: r.tasks, waiting: r.waiting, pending: r.entries.length });
+    }
+    // Everything waiting for a source that seeds items (fleet snapshots, the collector). POST claims it.
+    if (path === "/api/inbox") {
+      const scope = { source: q.source || undefined, home: q.home || undefined };
+      if (req.method === "POST") return json(await sourceInbox(db, scope, { deliver: true }));
+      const r = await poll(q.wait, () => sourceInbox(db, scope), (x) => x.length > 0);
+      return json({ pending: r.length, entries: r });
+    }
     const hook = path.match(/^\/api\/agent-sessions\/([^/]+)\/([^/]+?)(?:\/(idle|active|end))?$/);
     if (hook) {
       const [, harness, ext, kind] = hook.map((x) => x && decodeURIComponent(x));
@@ -68,6 +93,10 @@ export async function api(db: Db, req: Request): Promise<Response> {
       if (captain[2] === "message") return json(await captainMessage(db, id, body?.text, undefined, by));
       if (captain[2] === "stage") return json(await captainStage(db, id, body?.stage, undefined, by));
       const r = await respond(db, id, body, undefined, by);
+      return r ? json(r) : json({ error: "not found" }, 404);
+    }
+    if (req.method === "DELETE" && path.startsWith("/api/items/")) {
+      const r = await deleteItem(db, decodeURIComponent(path.slice("/api/items/".length)));
       return r ? json(r) : json({ error: "not found" }, 404);
     }
     if (req.method !== "GET") return json({ error: "method not allowed" }, 405);

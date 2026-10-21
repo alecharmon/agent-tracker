@@ -286,3 +286,90 @@ test("captain Mark merged settles every open PR; all closed unmerged -> failed",
   const closed = await t.taskPr(db, two.task_id, { url: "https://github.com/o/b/pull/3", status: "closed" });
   assert.equal(closed.state, "failed");
 });
+
+test("session inbox: one session owns many tasks and its dispatched ones; any answer or message wakes it, once", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { respond } = await import("./store.ts");
+  const a = await t.taskStart(db, { title: "Fleet: ship A", key: "fm/a", harness: "claude-code", session: "fm-1" });
+  const b = await t.taskStart(db, { title: "Fleet: ship B", key: "fm/b", harness: "claude-code", session: "fm-1" });
+  await t.taskStart(db, { title: "Crew task", key: "fm/a-1", parent: "fm/a", harness: "claude-code", dispatch: true });
+  assert.equal((await t.sessionInbox(db, "claude-code", "fm-1")).tasks, 3);
+  await t.taskAsk(db, a.task_id, { summary: "s", questions: [{ id: "q", prompt: "Go?", options: [{ id: "y", label: "Yes" }] }] });
+  assert.equal((await t.sessionInbox(db, "claude-code", "fm-1")).waiting, true);
+  await respond(db, "task:fm/a", { action: "answer", answers: { q: { option: "y" } } });
+  await t.captainMessage(db, "task:fm/b", "also bump the version");
+  await t.captainMessage(db, "task:fm/a-1", "crew: use the staging db");
+  const peek = await t.sessionInbox(db, "claude-code", "fm-1");
+  assert.equal(peek.entries.length, 3);
+  const got = await t.sessionInbox(db, "claude-code", "fm-1", { deliver: true });
+  const byTitle = Object.fromEntries(got.entries.map((e) => [e.title, e]));
+  assert.equal(byTitle["Fleet: ship A"].answer!.answers[0].answer, "Yes");
+  assert.equal(byTitle["Fleet: ship A"].task_id, a.task_id); // a handle with the owning session
+  assert.equal(byTitle["Fleet: ship B"].messages[0].text, "also bump the version");
+  assert.equal(byTitle["Crew task"].task_id, "task:fm/a-1"); // dispatched: bare id, no session of its own here
+  assert.equal((await t.sessionInbox(db, "claude-code", "fm-1")).entries.length, 0); // delivered once
+  void b;
+});
+
+test("source inbox: answers on seeded items reach their source, acknowledged on claim", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const { respond, getItem } = await import("./store.ts");
+  const t = await import("./tasks.ts");
+  const { stubPayloads } = await import("./fixtures.ts");
+  for (const p of stubPayloads(now)) await ingest(db, p);
+  const id = "firstmate:stub/firstmate:migrate-users-table";
+  await respond(db, id, { action: "answer", answers: { run: { option: "window" } }, feedback: "after the backup" });
+  await t.captainMessage(db, "firstmate:stub/firstmate:checkout-redesign", "add a rollback plan");
+  assert.equal((await t.sourceInbox(db, { source: "herdr" })).length, 0);
+  const got = await t.sourceInbox(db, { source: "firstmate" }, { deliver: true });
+  assert.deepEqual(got.map((e) => e.title.slice(0, 13)).sort(), ["Checkout rede", "Migrate users"]);
+  assert.equal(got.find((e) => e.answer)!.answer!.answers[0].answer, "Run in tonight's maintenance window");
+  const r = await getItem(db, id);
+  assert.ok(r && "item" in r && r.item.state === "underway" && r.responses[0].acked_at);
+  assert.equal((await t.sourceInbox(db, { source: "firstmate" })).length, 0);
+});
+
+test("source re-sync of an answered ask doesn't reopen it, and the answer stays deliverable", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const { respond, getItem } = await import("./store.ts");
+  const t = await import("./tasks.ts");
+  const { stubPayloads } = await import("./fixtures.ts");
+  const fm = () => stubPayloads(now).filter((p) => p.source === "firstmate");
+  for (const p of stubPayloads(now)) await ingest(db, p);
+  const id = "firstmate:stub/firstmate:migrate-users-table";
+  await respond(db, id, { action: "answer", answers: { run: { option: "window" } } });
+  for (const p of fm()) await ingest(db, p); // firstmate still reports the decision as needs_me
+  const r = await getItem(db, id);
+  assert.ok(r && "item" in r && r.item.state === "answered");
+  const got = await t.sourceInbox(db, { source: "firstmate" }, { deliver: true });
+  assert.equal(got.find((e) => e.answer)!.answer!.answers[0].answer, "Run in tonight's maintenance window");
+  for (const p of fm()) await ingest(db, p);
+  const after = await getItem(db, id);
+  assert.ok(after && "item" in after && after.item.state === "underway");
+  assert.equal((await t.sourceInbox(db, { source: "firstmate" })).length, 0); // delivered once
+  // A different ask on the same item does reopen it.
+  for (const p of fm()) {
+    for (const it of p.items) if (it.ask) it.ask = { ...it.ask, summary: "new question" };
+    await ingest(db, p);
+  }
+  const reopened = await getItem(db, id);
+  assert.ok(reopened && "item" in reopened && reopened.item.state === "needs_me");
+});
+
+test("deleteItem removes a task and its history", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { deleteItem, getItem } = await import("./store.ts");
+  const a = await t.taskStart(db, { title: "Stray e2e task", key: "e2e/x", harness: "claude-code", session: "s1" });
+  await t.captainMessage(db, "task:e2e/x", "hi");
+  assert.deepEqual(await deleteItem(db, "task:e2e/x"), { deleted: "task:e2e/x" });
+  assert.equal(await getItem(db, "task:e2e/x"), null);
+  assert.equal((await db.all(`SELECT 1 FROM sessions WHERE task_id = ?`, ["task:e2e/x"])).length, 0);
+  assert.equal(await deleteItem(db, "task:e2e/x"), null);
+  void a;
+});

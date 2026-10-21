@@ -68,6 +68,17 @@ function answerMessage(a: any) {
 const CONTEXT =
   "agent-tracker: this session wakes automatically when the captain answers a task question: after `agnt-trkr task ask`, end your turn instead of polling `agnt-trkr task answers`; the answer starts your next turn.";
 
+
+/** Everything delivered from the session inbox, as one message; names each task when there are several. */
+function inboxMessage(entries: { task_id: string; title: string; answer: any; messages: { text: string }[] }[]) {
+  const parts = entries.map((e) => {
+    const body = (answerMessage({ status: e.answer ? "answered" : "none", answers: e.answer?.answers, feedback: e.answer?.feedback, captain_messages: e.messages }) ?? "")
+      .split("\n").filter((l) => !l.startsWith("Act on exactly this")).join("\n");
+    return entries.length > 1 ? `For task "${e.title}" (task_id ${e.task_id}):\n${body}` : `${body}\n(task "${e.title}", task_id ${e.task_id})`
+  });
+  return parts.length ? [...parts, "Act on exactly this now (the captain's own words take precedence over your options), then keep each task updated."].join("\n\n") : null
+}
+
 export default function (pi: ExtensionAPI) {
   let session = "";
   let told = false;
@@ -80,7 +91,8 @@ export default function (pi: ExtensionAPI) {
     watching = null;
   };
 
-  async function watch(taskId: string) {
+  // Watches every task this session owns or dispatched: an answer or follow-up on any of them starts a turn.
+  async function watch() {
     stopWatching();
     const ac = new AbortController();
     watching = ac;
@@ -88,15 +100,15 @@ export default function (pi: ExtensionAPI) {
     while (!ac.signal.aborted && Date.now() < deadline) {
       let p: any;
       try {
-        p = await call(`/api/tasks/${enc(taskId)}/pending?wait=25`, { signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35_000)]) });
+        p = await call(`${base()}/inbox?wait=25`, { signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35_000)]) });
       } catch {
         if (ac.signal.aborted) return;
         await new Promise((r) => setTimeout(r, 3000));
         continue;
       }
       if (ac.signal.aborted) return;
-      if (p.answer === "ready" || p.messages > 0) {
-        const msg = answerMessage(await call(`/api/tasks/${enc(taskId)}/answers`));
+      if (p.pending > 0) {
+        const msg = inboxMessage((await call(`${base()}/inbox`, { method: "POST" })).entries);
         if (msg) pi.sendMessage({ customType: "agent-tracker", content: msg, display: true }, { triggerTurn: true, deliverAs: "followUp" });
         break;
       }
@@ -127,7 +139,7 @@ export default function (pi: ExtensionAPI) {
       if (!t?.task_id) return;
       if (!t.waiting) await call(`${base()}/idle`, { method: "POST" });
       // Watch in any state: the captain's answer or a follow-up starts the next turn.
-      void watch(t.task_id);
+      void watch();
     } catch {}
   });
   pi.on("session_shutdown", async () => {

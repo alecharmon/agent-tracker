@@ -101,6 +101,8 @@ export interface Item {
   harnesses: string[];
   /** Machines those sessions ran on (each machine's configured name). */
   machines: string[];
+  /** When the latest answer reached the agent or source (null: not yet). */
+  answer_delivered_at: string | null;
   /** Every PR on the task with its last reported status. */
   pr_list: { url: string; status: PrStatus | null }[];
 }

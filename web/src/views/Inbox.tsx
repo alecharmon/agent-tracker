@@ -174,7 +174,7 @@ export function Status({ item: i, now }: { item: Item; now: number }) {
   const text =
     i.state === "failed" ? "Failed"
     : i.state === "needs_me" ? `Waiting ${duration(i.updated_at ?? i.last_seen, now)}`
-    : i.state === "answered" ? `Answered · unread ${duration(i.updated_at ?? i.last_seen, now)}`
+    : i.state === "answered" ? (i.answer_delivered_at ? `Answered · delivered ${ago(i.answer_delivered_at, now)}` : `Answered · unread ${duration(i.updated_at ?? i.last_seen, now)}`)
     : i.state === "idle" ? `Idle · ${ago(i.last_seen, now)}`
     : i.state === "review" ? `In review · ${ago(i.updated_at ?? i.last_seen, now)}`
     : i.state === "validating" ? `Validating · ${duration(i.updated_at ?? i.last_seen, endOf(i, now))}`

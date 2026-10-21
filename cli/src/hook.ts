@@ -68,23 +68,34 @@ function stopWaiter(key: string) {
   rmSync(f, { force: true });
 }
 
+/** Everything delivered from the session inbox, as one message. Names each task when there's more than one. */
+export function inboxMessage(entries: { task_id: string; title: string; answer: any; messages: { text: string }[] }[]) {
+  const parts = entries.map((e) => {
+    const body = answerMessage({ status: e.answer ? "answered" : "none", answers: e.answer?.answers, feedback: e.answer?.feedback, captain_messages: e.messages })
+      ?.split("\n").filter((l) => !l.startsWith("Act on exactly this")).join("\n");
+    return entries.length > 1 ? `For task "${e.title}" (task_id ${e.task_id}):\n${body}` : `${body}\n(task "${e.title}", task_id ${e.task_id})`;
+  });
+  if (!parts.length) return null;
+  return [...parts, "Act on exactly this now (the captain's own words take precedence over your options), then keep each task updated."].join("\n\n");
+}
+
 /**
- * Wait for something for the agent (the captain's answer, or a follow-up message) without delivering it,
- * then deliver it once. Resolves to the message, or null when there's nothing (the agent read it itself,
- * the task is gone) or time ran out. `answersOnly`: stop as soon as no question is outstanding.
+ * Wait until something is waiting for this session on any task it owns or dispatched (an answer, a follow-up),
+ * then deliver it once. Resolves to the message, or null at the deadline. `answersOnly`: give up as soon as none
+ * of its tasks is waiting on the captain (harnesses that hold the turn must not hold it for nothing).
  */
-export async function waitForAnswer(call: Call, taskId: string, deadline: number, answersOnly = false) {
+export async function waitForInbox(call: Call, base: string, deadline: number, answersOnly = false) {
   while (Date.now() < deadline) {
     const left = Math.min(25, Math.max(1, Math.floor((deadline - Date.now()) / 1000)));
     let p: any;
     try {
-      p = await call(`/api/tasks/${enc(taskId)}/pending?wait=${left}`, { signal: AbortSignal.timeout((left + 5) * 1000) });
+      p = await call(`${base}/inbox?wait=${left}`, { signal: AbortSignal.timeout((left + 5) * 1000) });
     } catch {
       await sleep(3000); // tracker restarting or unreachable: keep watching
       continue;
     }
-    if (p.answer === "ready" || p.messages > 0) return answerMessage(await call(`/api/tasks/${enc(taskId)}/answers`));
-    if (answersOnly && p.answer !== "pending") return null;
+    if (p.pending > 0) return inboxMessage((await call(`${base}/inbox`, { method: "POST" })).entries);
+    if (answersOnly && !p.waiting) return null;
   }
   return null;
 }
@@ -125,15 +136,9 @@ export async function hook(call: Call, harness: string, event: string) {
     case "prompt": {
       stopWaiter(sid);
       await quiet(() => call(`${base}/active`, { method: "POST" }));
-      // Hand over anything queued for this session (a follow-up sent while Codex/Devin sat idle).
-      let t: any = null;
-      await quiet(async () => (t = await call(base)));
-      if (!t?.task_id) return;
+      // Hand over anything waiting on any of this session's tasks (e.g. a follow-up sent while Codex/Devin sat idle).
       let msg: string | null = null;
-      await quiet(async () => {
-        const p = await call(`/api/tasks/${enc(t.task_id)}/pending`);
-        if (p.answer === "ready" || p.messages > 0) msg = answerMessage(await call(`/api/tasks/${enc(t.task_id)}/answers`));
-      });
+      await quiet(async () => (msg = inboxMessage((await call(`${base}/inbox`, { method: "POST" })).entries)));
       if (msg) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }));
       return;
     }
@@ -145,15 +150,18 @@ export async function hook(call: Call, harness: string, event: string) {
       await quiet(async () => (t = await call(base)));
       if (!t?.task_id) return;
       if (!t.waiting) await quiet(() => call(`${base}/idle`, { method: "POST" }));
-      // Claude Code waits in the background in any state (answers and follow-ups wake it). Codex/Devin hold the
-      // turn, so they hold only for an outstanding question; their follow-ups arrive with the next prompt.
-      if (HELD.includes(harness) && !t.waiting) return;
+      // Claude Code waits in the background in any state (answers and follow-ups on any of its tasks wake it).
+      // Codex/Devin hold the turn, so only while one of the session's tasks waits on the captain; their
+      // follow-ups arrive with the next prompt.
+      let anyWaiting = t.waiting;
+      await quiet(async () => (anyWaiting = (await call(`${base}/inbox?wait=0`)).waiting || t.waiting));
+      if (HELD.includes(harness) && !anyWaiting) return;
       const release = claimWaiter(sid);
       if (!release) return;
       try {
         // Keep inside the configured hook timeout (integrations/*: 3600s).
         const hours = Number(process.env.AGENTS_HOOK_WAIT_HOURS ?? 1);
-        const message = await waitForAnswer(call, t.task_id, Date.now() + hours * 3600_000 - 30_000, HELD.includes(harness));
+        const message = await waitForInbox(call, base, Date.now() + hours * 3600_000 - 30_000, HELD.includes(harness));
         if (!message) return;
         if (HELD.includes(harness)) console.log(JSON.stringify({ decision: "block", reason: message }));
         else {

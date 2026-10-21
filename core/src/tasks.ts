@@ -105,6 +105,18 @@ async function mustTask(db: Db, h: string, now: string) {
   return { item: read && item.state === "answered" ? { ...item, state: "underway" as const } : item, session, inbox: queued };
 }
 
+/** Answers spelled out, so the agent doesn't need to map ids back to labels. */
+export function spellAnswers(ask: Ask | null, resp: Pick<TrackerResponse, "answers">) {
+  return Object.entries(resp.answers ?? {}).map(([qid, a]) => {
+    const q = ask?.questions.find((x) => x.id === qid);
+    return {
+      question_id: qid, question: q?.prompt ?? qid,
+      ...(a.option ? { option_id: a.option, answer: q?.options.find((o) => o.id === a.option)?.label ?? a.option } : {}),
+      ...(a.other ? { answer: a.other, free_text: true } : {}),
+    };
+  });
+}
+
 /** Attach delivered captain messages to an agent-facing result. */
 const withInbox = <T extends object>(result: T, inbox: CaptainMessage[]) =>
   inbox.length
@@ -245,16 +257,7 @@ export async function taskAnswer(db: Db, idOrNative: string, now = new Date().to
       { sql: `UPDATE responses SET delivered_at = ? WHERE id = ?`, params: [now, resp.id] },
       ...eventStmts(item.id, now, "DELIVERED", "read the answer", session),
     ]);
-  // Spell answers out so the agent doesn't need to map ids back to labels.
-  const answers = Object.entries(resp.answers ?? {}).map(([qid, a]) => {
-    const q = item.ask?.questions.find((x) => x.id === qid);
-    return {
-      question_id: qid, question: q?.prompt ?? qid,
-      ...(a.option ? { option_id: a.option, answer: q?.options.find((o) => o.id === a.option)?.label ?? a.option } : {}),
-      ...(a.other ? { answer: a.other, free_text: true } : {}),
-    };
-  });
-  return withInbox({ task_id: idOrNative, status: "answered" as const, at: resp.at, answers, feedback: resp.feedback ?? null }, inbox);
+  return withInbox({ task_id: idOrNative, status: "answered" as const, at: resp.at, answers: spellAnswers(item.ask, resp), feedback: resp.feedback ?? null }, inbox);
 }
 
 /**
@@ -413,4 +416,94 @@ export async function sessionSignal(db: Db, harness: string, external: string, k
   }
   await db.batch(stmts);
   return { task_id: t.task_id, state: to };
+}
+
+// ---- inboxes: everything waiting for an agent or an external system ----------------------------------------
+
+export interface InboxEntry {
+  task_id: string; // a handle with this session where it owns the task; else the bare id
+  title: string;
+  state: string;
+  answer: { at: string; answers: ReturnType<typeof spellAnswers>; feedback: string | null } | null;
+  messages: { at: string; text: string }[];
+}
+
+/**
+ * Collect undelivered answers and captain messages on `taskIds`. With `deliver`, mark them delivered (and, with
+ * `ack`, acknowledged too: for systems with no agent session to acknowledge later).
+ */
+async function inboxFor(db: Db, taskIds: string[], opts: { deliver: boolean; ack: boolean; sessionOf: (task: string) => string | null; now: string }) {
+  if (!taskIds.length) return [];
+  const marks = taskIds.map(() => "?").join(",");
+  const [items, resps, msgs] = await Promise.all([
+    db.all<{ id: string; title: string; state: string; ask: string | null }>(`SELECT id, title, state, ask FROM items WHERE id IN (${marks})`, taskIds),
+    db.all<{ id: number; item_id: string; at: string; answers: string | null; feedback: string | null }>(
+      `SELECT id, item_id, at, answers, feedback FROM responses WHERE item_id IN (${marks}) AND delivered_at IS NULL ORDER BY id`, taskIds),
+    db.all<{ id: number; item_id: string; at: string; text: string }>(
+      `SELECT id, item_id, at, text FROM messages WHERE item_id IN (${marks}) AND delivered_at IS NULL ORDER BY id`, taskIds),
+  ]);
+  const out: InboxEntry[] = [];
+  const stmts: Stmt[] = [];
+  for (const it of items) {
+    const rs = resps.filter((r) => r.item_id === it.id);
+    const ms = msgs.filter((m) => m.item_id === it.id);
+    if (!rs.length && !ms.length) continue;
+    const last = rs.at(-1);
+    const ask = it.ask ? (JSON.parse(it.ask) as Ask) : null;
+    const session = opts.sessionOf(it.id);
+    out.push({
+      task_id: session ? handle(it.id, session) : it.id,
+      title: it.title, state: it.state,
+      answer: last ? { at: last.at, answers: spellAnswers(ask, { answers: last.answers ? JSON.parse(last.answers) : undefined }), feedback: last.feedback } : null,
+      messages: ms.map((m) => ({ at: m.at, text: m.text })),
+    });
+    if (!opts.deliver) continue;
+    if (rs.length)
+      stmts.push({ sql: `UPDATE responses SET delivered_at = ?${opts.ack ? ", acked_at = ?" : ""} WHERE item_id = ? AND delivered_at IS NULL`,
+        params: opts.ack ? [opts.now, opts.now, it.id] : [opts.now, it.id] });
+    if (rs.length && opts.ack)
+      stmts.push({ sql: `UPDATE items SET state = CASE WHEN state = 'answered' THEN 'underway' ELSE state END, updated_at = ? WHERE id = ?`, params: [opts.now, it.id] });
+    if (ms.length)
+      stmts.push({ sql: `UPDATE messages SET delivered_at = ?, session_id = ? WHERE item_id = ? AND delivered_at IS NULL`, params: [opts.now, session, it.id] });
+    const what = [rs.length ? "the answer" : "", ms.length ? `${ms.length} message${ms.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
+    stmts.push(...eventStmts(it.id, opts.now, "DELIVERED", `${what} delivered${session ? "" : " to its source"}`, session));
+  }
+  if (stmts.length) await db.batch(stmts);
+  return out;
+}
+
+/**
+ * Everything waiting for one harness session: answers and messages on every task it started or joined, and on the
+ * tasks it dispatched. A first mate runs many tasks from one session; any of them should wake it.
+ */
+export async function sessionInbox(db: Db, harness: string, external: string, opts: { deliver?: boolean; now?: string } = {}) {
+  const sessions = await db.all<{ id: string; task_id: string }>(
+    `SELECT id, task_id FROM sessions WHERE harness = ? AND external_id = ? ORDER BY started_at`, [harnessOf(harness), external]);
+  const own = new Map(sessions.map((s) => [s.task_id, s.id])); // latest session per task wins
+  if (!own.size) return { tasks: 0, waiting: false, entries: [] as InboxEntry[] };
+  const ownIds = [...own.keys()];
+  const children = (await db.all<{ id: string }>(
+    `SELECT id FROM items WHERE parent_id IN (${ownIds.map(() => "?").join(",")})`, ownIds)).map((r) => r.id);
+  const ids = [...new Set([...ownIds, ...children])];
+  const states = await db.all<{ state: string }>(`SELECT state FROM items WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+  const entries = await inboxFor(db, ids, {
+    deliver: !!opts.deliver, ack: false, now: opts.now ?? new Date().toISOString(), sessionOf: (t) => own.get(t) ?? null,
+  });
+  return { tasks: ids.length, waiting: states.some((s) => s.state === "needs_me"), entries };
+}
+
+/**
+ * Everything waiting for an external system that seeds items (a fleet snapshot, the collector): answers and
+ * messages on its items. Claiming acknowledges them too: no agent session will call back for these items.
+ */
+export async function sourceInbox(db: Db, scope: { source?: string; home?: string }, opts: { deliver?: boolean; now?: string } = {}) {
+  const where = ["source != 'agents'"];
+  const params: unknown[] = [];
+  if (scope.source) (where.push("source = ?"), params.push(scope.source));
+  if (scope.home) (where.push("home = ?"), params.push(scope.home));
+  const ids = (await db.all<{ id: string }>(
+    `SELECT id FROM items WHERE ${where.join(" AND ")} AND (
+       EXISTS (SELECT 1 FROM responses r WHERE r.item_id = items.id AND r.delivered_at IS NULL) OR
+       EXISTS (SELECT 1 FROM messages m WHERE m.item_id = items.id AND m.delivered_at IS NULL))`, params)).map((r) => r.id);
+  return inboxFor(db, ids, { deliver: !!opts.deliver, ack: true, now: opts.now ?? new Date().toISOString(), sessionOf: () => null });
 }

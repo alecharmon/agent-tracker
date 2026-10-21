@@ -83,6 +83,10 @@ export function validatePayload(p: any): asserts p is IngestPayload {
   for (const e of p.events ?? []) if (!str(e?.native_id) || !str(e?.verb) || typeof e?.text !== "string") throw new Error("bad event");
 }
 
+// Sources re-send an ask as needs_me on every sync; once the captain answered that same ask, don't reopen it.
+const KEEP_ANSWERED = `excluded.state = 'needs_me' AND items.state IN ('answered', 'underway') AND excluded.ask IS items.ask
+  AND EXISTS (SELECT 1 FROM responses WHERE responses.item_id = items.id)`;
+
 export async function ingest(db: Db, p: IngestPayload, now = new Date().toISOString()) {
   const stmts: Stmt[] = [
     { sql: `UPDATE items SET present = 0 WHERE source = ? AND home = ?`, params: [p.source, p.home] },
@@ -98,8 +102,9 @@ export async function ingest(db: Db, p: IngestPayload, now = new Date().toISOStr
     stmts.push({
       sql: `INSERT INTO items (id, source, home, native_id, kind, state, title, detail, repo, owner, agent, model, url, started_at, updated_at, handoff_from, ask, first_seen, last_seen, present, raw)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)
-            ON CONFLICT (id) DO UPDATE SET kind=excluded.kind, state=excluded.state, title=excluded.title,
-              detail=excluded.detail, repo=coalesce(excluded.repo, items.repo), owner=excluded.owner, agent=coalesce(excluded.agent, items.agent), model=coalesce(excluded.model, items.model),
+            ON CONFLICT (id) DO UPDATE SET kind=excluded.kind, title=excluded.title,
+              state=CASE WHEN ${KEEP_ANSWERED} THEN items.state ELSE excluded.state END,
+              detail=CASE WHEN ${KEEP_ANSWERED} THEN items.detail ELSE excluded.detail END, repo=coalesce(excluded.repo, items.repo), owner=excluded.owner, agent=coalesce(excluded.agent, items.agent), model=coalesce(excluded.model, items.model),
               started_at=coalesce(excluded.started_at, items.started_at),
               url=coalesce(excluded.url, items.url), updated_at=coalesce(excluded.updated_at, items.updated_at),
               handoff_from=excluded.handoff_from, ask=excluded.ask,
@@ -137,7 +142,8 @@ const ITEM_COLS = `id, source, home, native_id, kind, state, title, detail, repo
   (SELECT count(*) FROM prs WHERE prs.item_id = items.id) AS pr_count,
   (SELECT group_concat(harness) FROM (SELECT DISTINCT harness FROM sessions WHERE sessions.task_id = items.id)) AS harnesses,
   (SELECT group_concat(machine, char(31)) FROM (SELECT DISTINCT machine FROM sessions WHERE sessions.task_id = items.id AND machine IS NOT NULL)) AS machines,
-  (SELECT json_group_array(json_object('url', url, 'status', status)) FROM prs WHERE prs.item_id = items.id) AS pr_list`;
+  (SELECT json_group_array(json_object('url', url, 'status', status)) FROM prs WHERE prs.item_id = items.id) AS pr_list,
+  (SELECT delivered_at FROM responses WHERE responses.item_id = items.id ORDER BY id DESC LIMIT 1) AS answer_delivered_at`;
 
 const parseItem = (r: any): Item => ({
   ...r,
@@ -290,6 +296,20 @@ export async function respond(db: Db, idOrNative: string, r: unknown, now = new 
       params: [hash(`${item.id}|${now}|response`), item.id, now, r.action === "retry" ? "RETRY" : "RESPONDED", summary] },
   ]);
   return getItem(db, item.id);
+}
+
+/** Remove an item and everything hanging off it (stray test tasks). Children keep living, unparented. */
+export async function deleteItem(db: Db, idOrNative: string) {
+  const found = await getItem(db, idOrNative);
+  if (!found || "ambiguous" in found) return null;
+  const id = found.item.id;
+  await db.batch([
+    ...["events", "prs", "responses", "messages"].map((t) => ({ sql: `DELETE FROM ${t} WHERE item_id = ?`, params: [id] })),
+    { sql: `DELETE FROM sessions WHERE task_id = ?`, params: [id] },
+    { sql: `UPDATE items SET parent_id = NULL WHERE parent_id = ?`, params: [id] },
+    { sql: `DELETE FROM items WHERE id = ?`, params: [id] },
+  ]);
+  return { deleted: id };
 }
 
 function describe(item: Item, r: ResponseIn) {
