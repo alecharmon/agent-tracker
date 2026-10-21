@@ -71,7 +71,13 @@ function currentTask(explicit?: string): string {
   return id;
 }
 
-const slug = (s: string, n: number) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || `q${n}`;
+/** Short id from text, cut at a word boundary (`should-i-deploy`, not `should-i-deploy-the-comm`). */
+export const slug = (s: string, n: number) => {
+  const full = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const head = full.slice(0, 25);
+  const cut = full.length <= 24 ? full : head.includes("-") ? head.replace(/-[^-]*$/, "") : full.slice(0, 24);
+  return cut || `q${n}`;
+};
 
 /** -q/-o flags, in order, into ask questions. */
 export function askFromFlags(argv: string[], noOther: boolean) {
