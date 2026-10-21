@@ -70,6 +70,13 @@ function eventStmts(id: string, ts: string, verb: string, text: string, session:
   return out;
 }
 
+async function peekTask(db: Db, h: string) {
+  const { task, session } = parseHandle(h);
+  const r = (await getItem(db, task)) ?? (KEY_RE.test(task) ? await getItem(db, taskIdOf(task)) : null);
+  if (!r || "ambiguous" in r) throw new Error(`not found: task ${task}`);
+  return { item: r.item, session };
+}
+
 /** Resolve a handle, task id or key; touch the session; acknowledge answers it has already read. */
 async function mustTask(db: Db, h: string, now: string) {
   const { task, session } = parseHandle(h);
@@ -138,9 +145,9 @@ export async function taskStart(db: Db, t: TaskStartIn, now = new Date().toISOSt
       params: [id, key, t.title.trim(), text, t.repo ?? null, lane, t.model ?? null, t.url ?? null, now, now, parent, now, now],
     },
     {
-      sql: `INSERT INTO sessions (id, task_id, harness, model, machine, agent, started_at, last_seen) VALUES (?,?,?,?,?,?,?,?)
+      sql: `INSERT INTO sessions (id, task_id, harness, model, machine, agent, started_at, last_seen, external_id) VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT (id) DO UPDATE SET last_seen=excluded.last_seen, ended_at=NULL, model=coalesce(excluded.model, sessions.model)`,
-      params: [sid, id, harness, t.model ?? null, machine, lane, now, now],
+      params: [sid, id, harness, t.model ?? null, machine, lane, now, now, t.session?.trim() || null],
     },
     ...eventStmts(id, now, !existing ? "STARTED" : resumed ? "RESUMED" : "JOINED", `${harness}${t.model ? ` (${t.model})` : ""}: ${text}`, sid),
   ]);
@@ -208,14 +215,16 @@ export async function taskAsk(db: Db, idOrNative: string, ask: unknown, now = ne
  * The captain's answer to the latest ask, if there is one yet. Reading marks it delivered; the agent's
  * next call (of any kind) acknowledges it, so an answer lost to a timed-out read is never swallowed.
  */
-export async function taskAnswer(db: Db, idOrNative: string, now = new Date().toISOString()) {
-  const { item, session } = await mustTask(db, idOrNative, now);
+export async function taskAnswer(db: Db, idOrNative: string, now = new Date().toISOString(), opts: { peek?: boolean } = {}) {
+  // A peek (hooks watching for the answer) reads without touching the session or delivering.
+  const { item, session } = opts.peek ? await peekTask(db, idOrNative) : await mustTask(db, idOrNative, now);
   const [ask] = await db.all<{ ts: string }>(
     `SELECT ts FROM events WHERE item_id = ? AND verb = 'ASKED' ORDER BY ts DESC, rowid DESC LIMIT 1`, [item.id]);
   if (!ask) return { task_id: idOrNative, status: "no_question" as const };
   const [r] = await db.all(`SELECT * FROM responses WHERE item_id = ? AND at >= ? ORDER BY id DESC LIMIT 1`, [item.id, ask.ts]);
   if (!r) return { task_id: idOrNative, status: "pending" as const, state: item.state };
   const resp = { ...r, answers: r.answers ? JSON.parse(r.answers) : undefined } as TrackerResponse;
+  if (opts.peek) return { task_id: idOrNative, status: "answered" as const, delivered: !!resp.delivered_at, state: item.state };
   if (!resp.delivered_at)
     await db.batch([
       { sql: `UPDATE responses SET delivered_at = ? WHERE id = ?`, params: [now, resp.id] },
@@ -246,4 +255,43 @@ export async function taskFinish(db: Db, idOrNative: string, f: { outcome: "done
     ...eventStmts(item.id, now, f.outcome === "done" ? "DONE" : "FAILED", f.text.trim() + (f.url && !f.text.includes(f.url) ? ` ${f.url}` : ""), session),
   ]);
   return { task_id: idOrNative, state };
+}
+
+// Harness hooks: they know the harness's own session id, not our task handle.
+
+/** The task this harness session is working on (its most recent), or null. */
+export async function sessionTask(db: Db, harness: string, external: string) {
+  const [s] = await db.all<{ id: string; task_id: string; ended_at: string | null }>(
+    `SELECT id, task_id, ended_at FROM sessions WHERE harness = ? AND external_id = ? ORDER BY started_at DESC LIMIT 1`,
+    [harnessOf(harness), external]);
+  if (!s) return null;
+  const r = await getItem(db, s.task_id);
+  if (!r || "ambiguous" in r) return null;
+  return {
+    task_id: handle(s.task_id, s.id), title: r.item.title, state: r.item.state,
+    waiting: r.item.state === "needs_me" || r.item.state === "answered",
+  };
+}
+
+/**
+ * Liveness from hooks, without the model:
+ * idle — the turn ended with the task still running; active — the agent picked back up; end — the session closed.
+ * Asks are never touched: a task waiting on the captain stays needs_me / answered.
+ */
+export async function sessionSignal(db: Db, harness: string, external: string, kind: "idle" | "active" | "end", now = new Date().toISOString()) {
+  check(["idle", "active", "end"].includes(kind), "signal must be idle, active or end");
+  const t = await sessionTask(db, harness, external);
+  if (!t) return { task_id: null, state: null };
+  const { task, session } = parseHandle(t.task_id);
+  const to = kind === "active" ? (t.state === "idle" ? "underway" : t.state) : t.state === "underway" ? "idle" : t.state;
+  const stmts: Stmt[] = [
+    { sql: `UPDATE sessions SET last_seen = ?${kind === "end" ? ", ended_at = ?" : ""} WHERE id = ?`, params: kind === "end" ? [now, now, session] : [now, session] },
+  ];
+  if (to !== t.state) {
+    stmts.push({ sql: `UPDATE items SET state = ?, last_seen = ? WHERE id = ?`, params: [to, now, task] });
+    stmts.push(...eventStmts(task, now, kind === "active" ? "ACTIVE" : kind === "end" ? "ENDED" : "IDLE",
+      kind === "active" ? "back at work" : kind === "end" ? "session closed" : "turn ended; waiting for input", session));
+  }
+  await db.batch(stmts);
+  return { task_id: t.task_id, state: to };
 }

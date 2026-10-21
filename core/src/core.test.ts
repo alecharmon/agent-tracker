@@ -164,3 +164,44 @@ test("tasks by key: a first mate dispatches, crewmates join the same task as ses
   assert.equal(tl.sessions.filter((s) => s.task_id === "task:fm/dark-mode-toggle").length, 1);
   void fm; void child;
 });
+
+test("hook signals: lookup by harness session, idle/active/end, peek never delivers", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { respond } = await import("./store.ts");
+  assert.equal(await t.sessionTask(db, "claude-code", "sess-1"), null);
+  const { task_id } = await t.taskStart(db, { title: "Hooked task", harness: "claude-code", session: "sess-1" });
+  assert.equal((await t.sessionTask(db, "claude-code", "sess-1"))!.task_id, task_id);
+  assert.equal((await t.sessionSignal(db, "claude-code", "sess-1", "idle")).state, "idle");
+  assert.equal((await t.sessionSignal(db, "claude-code", "sess-1", "active")).state, "underway");
+  await t.taskAsk(db, task_id, { summary: "s", questions: [{ id: "q", prompt: "Go?", options: [{ id: "y", label: "Yes" }] }] });
+  assert.equal((await t.sessionSignal(db, "claude-code", "sess-1", "idle")).state, "needs_me"); // asks untouched
+  await respond(db, t.parseHandle(task_id).task, { action: "answer", answers: { q: { option: "y" } } });
+  const peek = await t.taskAnswer(db, task_id, undefined, { peek: true });
+  assert.ok(peek.status === "answered" && peek.delivered === false);
+  assert.equal((await t.taskAnswer(db, task_id, undefined, { peek: true })).delivered, false); // still undelivered
+  await t.taskAnswer(db, task_id); // the real read
+  assert.equal((await t.taskAnswer(db, task_id, undefined, { peek: true })).delivered, true);
+  assert.equal((await t.sessionSignal(db, "claude-code", "sess-1", "end")).state, "answered");
+});
+
+test("migrate upgrades a database created by an older schema", async () => {
+  const db = nodeDb();
+  // The v1 shape: no parent_id, session_id, delivered_at, acked_at, external_id.
+  await db.batch([
+    { sql: `CREATE TABLE items (id TEXT PRIMARY KEY, source TEXT NOT NULL, home TEXT NOT NULL, native_id TEXT NOT NULL,
+      kind TEXT NOT NULL, state TEXT NOT NULL, title TEXT NOT NULL, detail TEXT, repo TEXT, owner TEXT, agent TEXT, model TEXT,
+      url TEXT, started_at TEXT, updated_at TEXT, handoff_from TEXT, ask TEXT, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+      present INTEGER NOT NULL DEFAULT 1, raw TEXT)` },
+    { sql: `CREATE TABLE events (id TEXT PRIMARY KEY, item_id TEXT NOT NULL, ts TEXT, verb TEXT NOT NULL, text TEXT NOT NULL)` },
+    { sql: `CREATE TABLE responses (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, at TEXT NOT NULL, action TEXT NOT NULL, answers TEXT, feedback TEXT)` },
+    { sql: `CREATE TABLE sessions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT, machine TEXT, agent TEXT,
+      started_at TEXT NOT NULL, last_seen TEXT NOT NULL, ended_at TEXT)` },
+  ]);
+  await migrate(db);
+  await migrate(db); // idempotent
+  const t = await import("./tasks.ts");
+  const r = await t.taskStart(db, { title: "after upgrade", harness: "pi", session: "x" });
+  assert.equal((await t.sessionTask(db, "pi", "x"))!.task_id, r.task_id);
+});

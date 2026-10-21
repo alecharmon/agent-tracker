@@ -17,7 +17,9 @@ CLI form: `agents task ask "<summary>" -q "<question?>" -o "<label>|<consequence
 
 ## Wait for the answer
 
-Call `task_answers`, or `agents task answers` (each waits up to 25s, so give the shell call a timeout of at least 30s), and branch on `status`:
+**Woken by your harness?** If an agent-tracker hook told you this session wakes when the captain answers, end your turn after asking. The answer starts your next turn, and you skip the rest of this section until then.
+
+Otherwise call `task_answers`, or `agents task answers` (each waits up to 25s, so give the shell call a timeout of at least 30s), and branch on `status`:
 
 - **`pending`:** carry on with work that holds up whichever way the captain decides, then check again. If none is left, keep waiting with `task_answers`.
 - **`answered`:** read `answers` and `feedback`.

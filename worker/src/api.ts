@@ -1,6 +1,6 @@
 import {
-  type Db, getItem, ingest, listItems, listPrs, respond, STATES, summary, taskAnswer, taskAsk, taskFinish, taskStart,
-  taskUpdate, timeline, validatePayload,
+  type Db, getItem, ingest, listItems, listPrs, respond, sessionSignal, sessionTask, STATES, summary, taskAnswer, taskAsk,
+  taskFinish, taskStart, taskUpdate, timeline, validatePayload,
 } from "@agent-tracker/core";
 import { mcp } from "./mcp.ts";
 
@@ -21,8 +21,9 @@ export async function api(db: Db, req: Request): Promise<Response> {
       const id = decodeURIComponent(task[1]);
       if (task[2] === "answers" && req.method === "GET") {
         const until = Date.now() + Math.min(Math.max(Number(q.wait ?? 0), 0), 50) * 1000;
+        const peek = q.peek === "1";
         for (;;) {
-          const r = await taskAnswer(db, id);
+          const r = await taskAnswer(db, id, undefined, { peek });
           if (r.status !== "pending" || Date.now() >= until) return json(r);
           await new Promise((res) => setTimeout(res, Math.min(2000, Math.max(until - Date.now(), 0))));
         }
@@ -32,6 +33,14 @@ export async function api(db: Db, req: Request): Promise<Response> {
       if (task[2] === "update") return json(await taskUpdate(db, id, body));
       if (task[2] === "ask") return json(await taskAsk(db, id, body));
       if (task[2] === "done") return json(await taskFinish(db, id, body));
+    }
+    // Harness hooks address sessions by the harness's own session id.
+    const hook = path.match(/^\/api\/agent-sessions\/([^/]+)\/([^/]+?)(?:\/(idle|active|end))?$/);
+    if (hook) {
+      const [, harness, ext, kind] = hook.map((x) => x && decodeURIComponent(x));
+      if (kind && req.method === "POST") return json(await sessionSignal(db, harness, ext, kind as "idle" | "active" | "end"));
+      if (!kind && req.method === "GET") return json((await sessionTask(db, harness, ext)) ?? { task_id: null });
+      return json({ error: "method not allowed" }, 405);
     }
     if (req.method === "POST" && path === "/api/ingest") {
       const body: unknown = await req.json();

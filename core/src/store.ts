@@ -24,7 +24,8 @@ const SCHEMA = [
   // One agent's stint on a task. A task collects sessions as it moves between agents.
   `CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY, task_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT, machine TEXT, agent TEXT,
-    started_at TEXT NOT NULL, last_seen TEXT NOT NULL, ended_at TEXT)`,
+    started_at TEXT NOT NULL, last_seen TEXT NOT NULL, ended_at TEXT, external_id TEXT)`,
+  `CREATE INDEX IF NOT EXISTS sessions_external ON sessions (harness, external_id, started_at)`,
   `CREATE INDEX IF NOT EXISTS sessions_task ON sessions (task_id, started_at)`,
   `CREATE INDEX IF NOT EXISTS events_item ON events (item_id, ts)`,
   `CREATE TABLE IF NOT EXISTS prs (
@@ -37,8 +38,25 @@ const SCHEMA = [
     items INTEGER NOT NULL, events INTEGER NOT NULL)`,
 ];
 
+// Columns added after the first schema. CREATE TABLE IF NOT EXISTS never alters an existing table, so
+// existing databases get these through ALTER TABLE before any index that needs them is created.
+const ADDED: [table: string, column: string, type: string][] = [
+  ["items", "parent_id", "TEXT"],
+  ["events", "session_id", "TEXT"],
+  ["responses", "delivered_at", "TEXT"],
+  ["responses", "acked_at", "TEXT"],
+  ["sessions", "external_id", "TEXT"],
+];
+
 export async function migrate(db: Db) {
-  await db.batch(SCHEMA.map((sql) => ({ sql })));
+  const isIndex = (sql: string) => /^CREATE INDEX/.test(sql);
+  await db.batch(SCHEMA.filter((sql) => !isIndex(sql)).map((sql) => ({ sql })));
+  const add: Stmt[] = [];
+  for (const table of new Set(ADDED.map(([t]) => t))) {
+    const have = new Set((await db.all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, [table])).map((r) => r.name));
+    for (const [t, column, type] of ADDED) if (t === table && !have.has(column)) add.push({ sql: `ALTER TABLE ${t} ADD COLUMN ${column} ${type}` });
+  }
+  await db.batch([...add, ...SCHEMA.filter(isIndex).map((sql) => ({ sql }))]);
 }
 
 export const itemId = (source: string, home: string, nativeId: string) => `${source}:${home}:${nativeId}`;
@@ -187,6 +205,8 @@ export interface Session {
   started_at: string;
   last_seen: string;
   ended_at: string | null;
+  /** The harness's own session id (Claude Code session_id, Pi session file, …), when known. */
+  external_id: string | null;
 }
 
 /**
@@ -207,7 +227,7 @@ export async function timeline(db: Db, since: string) {
     ...real,
     ...items.filter((i) => !has.has(i.id)).map((i): Session => ({
       id: `${i.id}#0`, task_id: i.id, harness: i.source, model: i.model, machine: i.home, agent: i.agent,
-      started_at: i.started_at ?? i.first_seen, last_seen: i.updated_at ?? i.last_seen, ended_at: null,
+      started_at: i.started_at ?? i.first_seen, last_seen: i.updated_at ?? i.last_seen, ended_at: null, external_id: null,
     })),
   ];
   const events = await db.all<TrackerEvent>(`SELECT * FROM events WHERE ts >= ? ORDER BY ts`, [since]);
