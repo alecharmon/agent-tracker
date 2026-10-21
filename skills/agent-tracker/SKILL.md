@@ -21,7 +21,7 @@ Use the `agent-tracker` MCP tools when you have them; otherwise the `agnt-trkr t
 
 1. **Start**, once, before your first real step.
    - Title: a short imperative, e.g. "Fix flaky login test".
-   - Pass `repo` (the working-directory basename), `machine` (the name your hook gave you, else `agnt-trkr config get machine`) and `model` (your model name). Pass `session` when your harness gave you a session id. The CLI fills repo and machine itself; give it `--model`.
+   - Pass `repo` (the working-directory basename), `machine` (this machine's configured name: the one your hook gave you, else the `machine` value from `agnt-trkr config get machine`, which defaults to whoami@hostname) and `model` (your model name). Pass `session` when your harness gave you a session id. The CLI fills repo and machine itself; give it `--model`.
    - Handed a task key, in your prompt or as `$AGENTS_TASK_KEY`? Pass it as `key`: you join that task.
    - Done when you hold a `task_id`. Give repo, machine and model in that one call: it is your only start. Pass that `task_id` unchanged to every later MCP call, for the rest of the session, including after you finish. The CLI remembers it: later commands need no `--task`.
 
