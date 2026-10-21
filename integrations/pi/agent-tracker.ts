@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { basename } from "node:path";
 
 // agent-tracker for Pi: liveness from lifecycle events, and wake-on-answer.
-// When a turn ends while the task waits on the captain, watch for the answer and start a new turn with it.
+// After each turn, watch for the captain's answer or follow-up messages, and start a new turn with them.
 // Talks to the tracker over HTTP (AGENTS_URL, default http://127.0.0.1:8787; AGENTS_TOKEN if auth is on).
 
 const BASE = (process.env.AGENTS_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
@@ -20,13 +20,19 @@ async function call(path: string, init: RequestInit = {}): Promise<any> {
 }
 
 function answerMessage(a: any) {
-  const lines = (a.answers ?? []).map((x: any) => `- ${x.question} → ${x.answer}${x.free_text ? " (in the captain's own words)" : ""}`);
-  if (a.feedback) lines.push(`- Feedback: ${a.feedback}`);
-  return [
-    "agent-tracker: the captain answered your question on the tracker.",
-    ...lines,
-    "Act on exactly this now (the captain's own words take precedence over your options), then keep the task updated.",
-  ].join("\n");
+  const out: string[] = []
+  if (a.status === "answered") {
+    out.push("agent-tracker: the captain answered your question on the tracker.")
+    for (const x of a.answers ?? []) out.push(`- ${x.question} → ${x.answer}${x.free_text ? " (in the captain's own words)" : ""}`)
+    if (a.feedback) out.push(`- Feedback: ${a.feedback}`)
+  }
+  if (a.captain_messages?.length) {
+    out.push("agent-tracker: message from the captain:")
+    for (const m of a.captain_messages) out.push(`- ${m.text}`)
+  }
+  if (!out.length) return null
+  out.push("Act on exactly this now (the captain's own words take precedence over your options), then keep the task updated.")
+  return out.join("\n")
 }
 
 const CONTEXT =
@@ -50,22 +56,20 @@ export default function (pi: ExtensionAPI) {
     watching = ac;
     const deadline = Date.now() + Number(process.env.AGENTS_HOOK_WAIT_HOURS ?? 1) * 3600_000;
     while (!ac.signal.aborted && Date.now() < deadline) {
-      let peek: any;
+      let p: any;
       try {
-        peek = await call(`/api/tasks/${enc(taskId)}/answers?peek=1&wait=25`, { signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35_000)]) });
+        p = await call(`/api/tasks/${enc(taskId)}/pending?wait=25`, { signal: AbortSignal.any([ac.signal, AbortSignal.timeout(35_000)]) });
       } catch {
         if (ac.signal.aborted) return;
         await new Promise((r) => setTimeout(r, 3000));
         continue;
       }
-      if (peek.status === "answered") {
-        if (!peek.delivered && !ac.signal.aborted) {
-          const a = await call(`/api/tasks/${enc(taskId)}/answers`);
-          pi.sendMessage({ customType: "agent-tracker", content: answerMessage(a), display: true }, { triggerTurn: true, deliverAs: "followUp" });
-        }
+      if (ac.signal.aborted) return;
+      if (p.answer === "ready" || p.messages > 0) {
+        const msg = answerMessage(await call(`/api/tasks/${enc(taskId)}/answers`));
+        if (msg) pi.sendMessage({ customType: "agent-tracker", content: msg, display: true }, { triggerTurn: true, deliverAs: "followUp" });
         break;
       }
-      if (peek.status !== "pending" || !["needs_me", "answered"].includes(peek.state)) break;
     }
     if (watching === ac) watching = null;
   }
@@ -91,8 +95,9 @@ export default function (pi: ExtensionAPI) {
     try {
       const t = await call(base());
       if (!t?.task_id) return;
-      if (t.waiting) void watch(t.task_id);
-      else await call(`${base()}/idle`, { method: "POST" });
+      if (!t.waiting) await call(`${base()}/idle`, { method: "POST" });
+      // Watch in any state: the captain's answer or a follow-up starts the next turn.
+      void watch(t.task_id);
     } catch {}
   });
   pi.on("session_shutdown", async () => {

@@ -1,6 +1,6 @@
 import { ArrowUpDownIcon, SearchIcon, XIcon } from "lucide-react"
 import { RollingNumber } from "@/components/rolling-number"
-import { harnessLabel, type Item } from "@/lib/api"
+import type { Item } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { matches, SORTS, type SortKey, STATUS, type ViewOptions } from "@/lib/view-options"
 
@@ -9,7 +9,7 @@ const control = "h-8 rounded-md border bg-transparent px-2.5 text-sm outline-non
 /** Filter + sort, shared by Inbox and Lanes. */
 export function ViewToolbar({ items, value, onChange }: { items: Item[]; value: ViewOptions; onChange: (v: ViewOptions) => void }) {
   const set = (p: Partial<ViewOptions>) => onChange({ ...value, ...p })
-  const harnesses = [...new Set(items.flatMap((i) => i.harnesses))].sort()
+  const projects = [...new Set(items.map((i) => i.repo).filter((r): r is string => !!r))].sort()
   return (
     <div role="toolbar" aria-label="Filter and sort" className="flex flex-wrap items-center gap-2">
       <label className="relative flex min-w-48 flex-1 items-center sm:max-w-xs">
@@ -41,10 +41,10 @@ export function ViewToolbar({ items, value, onChange }: { items: Item[]; value: 
           )
         })}
       </div>
-      {harnesses.length > 1 && (
-        <select aria-label="Agent" value={value.harness} onChange={(e) => set({ harness: e.target.value })} className={control}>
-          <option value="">All agents</option>
-          {harnesses.map((h) => <option key={h} value={h}>{harnessLabel(h)}</option>)}
+      {projects.length > 1 && (
+        <select aria-label="Project" value={value.project} onChange={(e) => set({ project: e.target.value })} className={control}>
+          <option value="">All projects</option>
+          {projects.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       )}
       <label className="ml-auto flex items-center gap-1.5 text-sm text-muted-foreground">

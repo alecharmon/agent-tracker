@@ -25,7 +25,7 @@ export function parseLeadingJson(text: string): any {
 }
 
 // Higher wins when one native id shows up in several snapshot lists.
-const RANK: Record<State, number> = { needs_me: 7, answered: 6, failed: 5, underway: 4, gated: 3, landed: 2, idle: 1, unknown: 0 };
+const RANK: Record<State, number> = { needs_me: 7, answered: 6, review: 6, validating: 5, failed: 5, underway: 4, gated: 3, landed: 2, idle: 1, unknown: 0 };
 
 /** fm-bearings.v1 snapshot -> one ingest for (firstmate, home). */
 export function fromBearings(snap: any): IngestPayload {

@@ -28,7 +28,7 @@ const ROW = 36 // px per segment row
 const GAP = 6
 const PAD = 9
 const MIN_BLOCK = 36 // px
-const LIVE = ["underway", "needs_me", "answered"]
+const LIVE = ["underway", "needs_me", "answered", "validating"]
 const curve = (x1: number, y1: number, x2: number, y2: number, k: number) =>
   `M ${x1} ${y1} C ${x1 + k} ${y1}, ${x2 - k} ${y2}, ${x2} ${y2}`
 // Segments grow into "now" and drift left on a 1s linear clock; hand-off streams use the same one.
@@ -61,7 +61,7 @@ function order(items: Item[]) {
   return out
 }
 
-export function Lanes({ onAsk, options }: { onAsk: (i: Item) => void; options: ViewOptions }) {
+export function Lanes({ onOpen, options }: { onOpen: (i: Item, siblings: Item[]) => void; options: ViewOptions }) {
   const [minutes, setMinutes] = React.useState(30)
   const fetchMinutes = BUCKETS.find((b) => b >= minutes) ?? MAX_SPAN
   const t = usePoll<{ items: Item[]; sessions: Session[]; events: TrackerEvent[] }>(`/api/timeline?minutes=${fetchMinutes}`, 5_000)
@@ -235,7 +235,7 @@ export function Lanes({ onAsk, options }: { onAsk: (i: Item) => void; options: V
             </svg>
             {width > 0 && [...geo.values()].map(({ x1, x2, cy, seg }) => (
               <Block key={seg.s.id} seg={seg} events={eventsBy.get(seg.s.id) ?? []} now={now} track={width} tick={tick}
-                left={x1} width={x2 - x1} top={cy - ROW / 2} onAsk={() => onAsk(seg.task)} />
+                left={x1} width={x2 - x1} top={cy - ROW / 2} onOpen={() => onOpen(seg.task, laid.map((r) => r.item))} />
             ))}
           </div>
         </div>
@@ -246,8 +246,8 @@ export function Lanes({ onAsk, options }: { onAsk: (i: Item) => void; options: V
 
 const NARROW = 110 // px: below this a block can't hold its label, so the label sits beside it
 
-function Block({ seg, events, now, left, width, top, track, tick, onAsk }: {
-  seg: Seg; events: TrackerEvent[]; now: number; left: number; width: number; top: number; track: number; tick: Motion; onAsk: () => void
+function Block({ seg, events, now, left, width, top, track, tick, onOpen }: {
+  seg: Seg; events: TrackerEvent[]; now: number; left: number; width: number; top: number; track: number; tick: Motion; onOpen: () => void
 }) {
   const { s, task, latest } = seg
   // Only the session holding the task now carries its state; earlier stints read as finished.
@@ -273,7 +273,7 @@ function Block({ seg, events, now, left, width, top, track, tick, onAsk }: {
         render={
           <motion.button
             type="button"
-            onClick={state === "needs_me" ? onAsk : undefined}
+            onClick={onOpen}
             initial={{ opacity: 0, scaleX: 0.85, left, width }}
             animate={{ opacity: 1, scaleX: 1, left, width }}
             transition={{ left: tick, width: tick, default: { type: "spring", stiffness: 260, damping: 30 } }}
@@ -282,11 +282,12 @@ function Block({ seg, events, now, left, width, top, track, tick, onAsk }: {
               tone(state).bar,
               live && "border-r-2",
               state === "underway" && "border-r-blue-400",
-              state === "needs_me" && "cursor-pointer border-r-amber-400",
+              state === "needs_me" && "border-r-amber-400",
               state === "answered" && "border-r-violet-400",
             )}
             style={{ top, height: ROW }}
-            aria-label={`${task.title}: ${who}, ${STATE_LABEL[state]}${state === "needs_me" ? ", open to respond" : ""}`}
+            aria-haspopup="dialog"
+            aria-label={`${task.title}: ${who}, ${STATE_LABEL[state]}${state === "needs_me" ? ", open to respond" : ", open details"}`}
           />
         }
       >

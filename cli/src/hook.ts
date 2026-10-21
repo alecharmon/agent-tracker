@@ -25,15 +25,21 @@ function stdinJson(): any {
   }
 }
 
-/** What the captain said, as one message the woken agent can act on. */
+/** The answer and/or captain messages, as one message the woken agent can act on. */
 export function answerMessage(a: any) {
-  const lines = (a.answers ?? []).map((x: any) => `- ${x.question} → ${x.answer}${x.free_text ? " (in the captain's own words)" : ""}`);
-  if (a.feedback) lines.push(`- Feedback: ${a.feedback}`);
-  return [
-    "agent-tracker: the captain answered your question on the tracker.",
-    ...lines,
-    "Act on exactly this now (the captain's own words take precedence over your options), then keep the task updated.",
-  ].join("\n");
+  const out: string[] = [];
+  if (a.status === "answered") {
+    out.push("agent-tracker: the captain answered your question on the tracker.");
+    for (const x of a.answers ?? []) out.push(`- ${x.question} → ${x.answer}${x.free_text ? " (in the captain's own words)" : ""}`);
+    if (a.feedback) out.push(`- Feedback: ${a.feedback}`);
+  }
+  if (a.captain_messages?.length) {
+    out.push("agent-tracker: message from the captain:");
+    for (const m of a.captain_messages) out.push(`- ${m.text}`);
+  }
+  if (!out.length) return null;
+  out.push("Act on exactly this now (the captain's own words take precedence over your options), then keep the task updated.");
+  return out.join("\n");
 }
 
 const waiterDir = join(homedir(), ".cache/agent-tracker/waiters");
@@ -62,24 +68,22 @@ function stopWaiter(key: string) {
 }
 
 /**
- * Wait for the captain's answer without delivering it, then deliver it once.
- * Resolves to the answer message, or null when the agent read it itself, the ask went away, or time ran out.
+ * Wait for something for the agent (the captain's answer, or a follow-up message) without delivering it,
+ * then deliver it once. Resolves to the message, or null when there's nothing (the agent read it itself,
+ * the task is gone) or time ran out. `answersOnly`: stop as soon as no question is outstanding.
  */
-export async function waitForAnswer(call: Call, taskId: string, deadline: number) {
+export async function waitForAnswer(call: Call, taskId: string, deadline: number, answersOnly = false) {
   while (Date.now() < deadline) {
     const left = Math.min(25, Math.max(1, Math.floor((deadline - Date.now()) / 1000)));
-    let peek: any;
+    let p: any;
     try {
-      peek = await call(`/api/tasks/${enc(taskId)}/answers?peek=1&wait=${left}`, { signal: AbortSignal.timeout((left + 5) * 1000) });
+      p = await call(`/api/tasks/${enc(taskId)}/pending?wait=${left}`, { signal: AbortSignal.timeout((left + 5) * 1000) });
     } catch {
       await sleep(3000); // tracker restarting or unreachable: keep watching
       continue;
     }
-    if (peek.status === "answered") {
-      if (peek.delivered) return null; // the agent already has it
-      return answerMessage(await call(`/api/tasks/${enc(taskId)}/answers`));
-    }
-    if (peek.status !== "pending" || !["needs_me", "answered"].includes(peek.state)) return null;
+    if (p.answer === "ready" || p.messages > 0) return answerMessage(await call(`/api/tasks/${enc(taskId)}/answers`));
+    if (answersOnly && p.answer !== "pending") return null;
   }
   return null;
 }
@@ -117,9 +121,21 @@ export async function hook(call: Call, harness: string, event: string) {
       console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } }));
       return;
     }
-    case "prompt":
+    case "prompt": {
       stopWaiter(sid);
-      return quiet(() => call(`${base}/active`, { method: "POST" }));
+      await quiet(() => call(`${base}/active`, { method: "POST" }));
+      // Hand over anything queued for this session (a follow-up sent while Codex/Devin sat idle).
+      let t: any = null;
+      await quiet(async () => (t = await call(base)));
+      if (!t?.task_id) return;
+      let msg: string | null = null;
+      await quiet(async () => {
+        const p = await call(`/api/tasks/${enc(t.task_id)}/pending`);
+        if (p.answer === "ready" || p.messages > 0) msg = answerMessage(await call(`/api/tasks/${enc(t.task_id)}/answers`));
+      });
+      if (msg) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }));
+      return;
+    }
     case "session-end":
       stopWaiter(sid);
       return quiet(() => call(`${base}/end`, { method: "POST" }));
@@ -127,13 +143,16 @@ export async function hook(call: Call, harness: string, event: string) {
       let t: any = null;
       await quiet(async () => (t = await call(base)));
       if (!t?.task_id) return;
-      if (!t.waiting) return quiet(() => call(`${base}/idle`, { method: "POST" }));
+      if (!t.waiting) await quiet(() => call(`${base}/idle`, { method: "POST" }));
+      // Claude Code waits in the background in any state (answers and follow-ups wake it). Codex/Devin hold the
+      // turn, so they hold only for an outstanding question; their follow-ups arrive with the next prompt.
+      if (HELD.includes(harness) && !t.waiting) return;
       const release = claimWaiter(sid);
       if (!release) return;
       try {
         // Keep inside the configured hook timeout (integrations/*: 3600s).
         const hours = Number(process.env.AGENTS_HOOK_WAIT_HOURS ?? 1);
-        const message = await waitForAnswer(call, t.task_id, Date.now() + hours * 3600_000 - 30_000);
+        const message = await waitForAnswer(call, t.task_id, Date.now() + hours * 3600_000 - 30_000, HELD.includes(harness));
         if (!message) return;
         if (HELD.includes(harness)) console.log(JSON.stringify({ decision: "block", reason: message }));
         else {

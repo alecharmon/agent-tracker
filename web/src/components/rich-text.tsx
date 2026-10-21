@@ -2,10 +2,10 @@ import * as React from "react"
 
 const TOKEN = /(https?:\/\/[^\s<>"')\]]+)|\b([0-9a-f]{40})\b/g
 
-/** Short label for a URL: GitHub PRs/issues become owner/repo#123. */
+/** Short label for a URL: GitHub PRs/issues become repo/123. */
 export function shortUrl(url: string) {
-  const gh = url.match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)/)
-  if (gh) return `${gh[1]}#${gh[2]}`
+  const gh = url.match(/^https:\/\/github\.com\/[\w.-]+\/([\w.-]+)\/(?:pull|issues)\/(\d+)/)
+  if (gh) return `${gh[1]}/${gh[2]}`
   return url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")
 }
 

@@ -1,6 +1,6 @@
 import {
-  type Db, getItem, ingest, listItems, listPrs, respond, sessionSignal, sessionTask, STATES, summary, taskAnswer, taskAsk,
-  taskFinish, taskStart, taskUpdate, timeline, validatePayload,
+  captainMessage, captainStage, type Db, getItem, ingest, listItems, listPrs, respond, sessionSignal, sessionTask, STATES,
+  summary, taskAnswer, taskAsk, taskFinish, taskPending, taskPr, taskStart, taskUpdate, timeline, validatePayload,
 } from "@agent-tracker/core";
 import { mcp } from "./mcp.ts";
 
@@ -16,9 +16,18 @@ export async function api(db: Db, req: Request): Promise<Response> {
   try {
     // Agent task API (the CLI's `agents task …`; MCP tools call the same core functions).
     if (req.method === "POST" && path === "/api/tasks") return json(await taskStart(db, await req.json()), 201);
-    const task = path.match(/^\/api\/tasks\/(.+)\/(update|ask|answers|done)$/);
+    const task = path.match(/^\/api\/tasks\/(.+)\/(update|ask|answers|done|pending|pr)$/);
     if (task) {
       const id = decodeURIComponent(task[1]);
+      if (task[2] === "pending" && req.method === "GET") {
+        // Hook watchers long-poll here: returns once an answer or captain message is waiting, or at the deadline.
+        const until = Date.now() + Math.min(Math.max(Number(q.wait ?? 0), 0), 50) * 1000;
+        for (;;) {
+          const r = await taskPending(db, id);
+          if (r.answer === "ready" || r.messages > 0 || Date.now() >= until) return json(r);
+          await new Promise((res) => setTimeout(res, Math.min(2000, Math.max(until - Date.now(), 0))));
+        }
+      }
       if (task[2] === "answers" && req.method === "GET") {
         const until = Date.now() + Math.min(Math.max(Number(q.wait ?? 0), 0), 50) * 1000;
         const peek = q.peek === "1";
@@ -33,6 +42,7 @@ export async function api(db: Db, req: Request): Promise<Response> {
       if (task[2] === "update") return json(await taskUpdate(db, id, body));
       if (task[2] === "ask") return json(await taskAsk(db, id, body));
       if (task[2] === "done") return json(await taskFinish(db, id, body));
+      if (task[2] === "pr") return json(await taskPr(db, id, body));
     }
     // Harness hooks address sessions by the harness's own session id.
     const hook = path.match(/^\/api\/agent-sessions\/([^/]+)\/([^/]+?)(?:\/(idle|active|end))?$/);
@@ -50,9 +60,13 @@ export async function api(db: Db, req: Request): Promise<Response> {
       for (const p of payloads) results.push({ source: p.source, home: p.home, ...(await ingest(db, p)) });
       return json({ ok: true, results });
     }
-    const responding = path.match(/^\/api\/items\/(.+)\/respond$/);
-    if (req.method === "POST" && responding) {
-      const r = await respond(db, decodeURIComponent(responding[1]), await req.json());
+    const captain = path.match(/^\/api\/items\/(.+)\/(respond|message|stage)$/);
+    if (req.method === "POST" && captain) {
+      const id = decodeURIComponent(captain[1]);
+      const body: any = await req.json();
+      if (captain[2] === "message") return json(await captainMessage(db, id, body?.text));
+      if (captain[2] === "stage") return json(await captainStage(db, id, body?.stage));
+      const r = await respond(db, id, body);
       return r ? json(r) : json({ error: "not found" }, 404);
     }
     if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
@@ -75,6 +89,6 @@ export async function api(db: Db, req: Request): Promise<Response> {
     return json({ error: "not found" }, 404);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return json({ error: msg }, /^not found/.test(msg) ? 404 : /payload|bad item|bad event|bad response|bad task|JSON/.test(msg) ? 400 : 500);
+    return json({ error: msg }, /^not found/.test(msg) ? 404 : /payload|bad item|bad event|bad response|bad task|JSON|message text|stage must/.test(msg) ? 400 : 500);
   }
 }

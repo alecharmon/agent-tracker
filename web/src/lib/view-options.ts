@@ -3,7 +3,8 @@ import { harnessLabel, type Item } from "@/lib/api"
 export const STATUS = [
   { key: "all", label: "All", states: null },
   { key: "needs", label: "Needs you", states: ["needs_me", "failed"] },
-  { key: "live", label: "Running", states: ["underway", "answered", "idle"] },
+  { key: "live", label: "Running", states: ["underway", "answered", "validating", "idle"] },
+  { key: "review", label: "In review", states: ["review"] },
   { key: "done", label: "Done", states: ["landed"] },
 ] as const
 export type StatusKey = (typeof STATUS)[number]["key"]
@@ -19,7 +20,7 @@ export const SORTS = {
 } as const
 export type SortKey = keyof typeof SORTS
 
-const RANK = ["needs_me", "failed", "answered", "underway", "gated", "landed", "idle", "unknown"]
+const RANK = ["needs_me", "failed", "review", "answered", "validating", "underway", "idle", "gated", "landed", "unknown"]
 const rank = (i: Item) => RANK.indexOf(i.state)
 const time = (i: Item, k: "updated" | "started") =>
   Date.parse((k === "updated" ? i.updated_at : i.started_at) ?? i.last_seen ?? i.first_seen)
@@ -27,15 +28,15 @@ const time = (i: Item, k: "updated" | "started") =>
 export interface ViewOptions {
   q: string
   status: StatusKey
-  harness: string // "" = any
+  project: string // repo; "" = any
   sort: SortKey
 }
-export const DEFAULT_OPTIONS: ViewOptions = { q: "", status: "all", harness: "", sort: "attention" }
+export const DEFAULT_OPTIONS: ViewOptions = { q: "", status: "all", project: "", sort: "attention" }
 
 export function matches(i: Item, o: ViewOptions) {
   const st = STATUS.find((s) => s.key === o.status)?.states
   if (st && !(st as readonly string[]).includes(i.state)) return false
-  if (o.harness && !i.harnesses.includes(o.harness) && i.source !== o.harness) return false
+  if (o.project && i.repo !== o.project) return false
   if (o.q.trim()) {
     const hay = [i.title, i.detail, i.repo, i.native_id, i.model, ...i.harnesses.map(harnessLabel)].join(" ").toLowerCase()
     if (!o.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))) return false

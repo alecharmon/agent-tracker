@@ -89,7 +89,7 @@ async function main(argv: string[]) {
       detail: { type: "string" }, model: { type: "string" }, key: { type: "string" }, parent: { type: "string" }, url: { type: "string" }, task: { type: "string" },
       wait: { type: "string" }, harness: { type: "string" }, session: { type: "string" }, "ask-json": { type: "string" },
       question: { type: "string", multiple: true }, option: { type: "string", short: "o", multiple: true },
-      "no-other": { type: "boolean" }, dispatch: { type: "boolean" },
+      "no-other": { type: "boolean" }, dispatch: { type: "boolean" }, status: { type: "string" }, note: { type: "string" },
     },
   });
   if (o.help || cmd === "help") return console.log(USAGE);

@@ -1,5 +1,5 @@
 import { prUrls } from "./normalize.ts";
-import type { IngestPayload, Item, ItemFilter, Pr, ResponseIn, Summary, TrackerEvent, TrackerResponse } from "./types.ts";
+import type { CaptainMessage, IngestPayload, Item, ItemFilter, Pr, ResponseIn, Summary, TrackerEvent, TrackerResponse } from "./types.ts";
 
 export type Row = Record<string, any>;
 export interface Stmt { sql: string; params?: unknown[] }
@@ -29,10 +29,14 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS sessions_task ON sessions (task_id, started_at)`,
   `CREATE INDEX IF NOT EXISTS events_item ON events (item_id, ts)`,
   `CREATE TABLE IF NOT EXISTS prs (
-    url TEXT PRIMARY KEY, item_id TEXT NOT NULL, verb TEXT, sha TEXT, seen_at TEXT NOT NULL)`,
+    url TEXT PRIMARY KEY, item_id TEXT NOT NULL, verb TEXT, sha TEXT, seen_at TEXT NOT NULL, status TEXT, note TEXT)`,
   `CREATE TABLE IF NOT EXISTS responses (
     id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, at TEXT NOT NULL,
     action TEXT NOT NULL, answers TEXT, feedback TEXT, delivered_at TEXT, acked_at TEXT)`,
+  `CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, at TEXT NOT NULL, text TEXT NOT NULL,
+    delivered_at TEXT, session_id TEXT)`,
+  `CREATE INDEX IF NOT EXISTS messages_item ON messages (item_id, delivered_at)`,
   `CREATE TABLE IF NOT EXISTS ingests (
     id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, home TEXT NOT NULL, at TEXT NOT NULL,
     items INTEGER NOT NULL, events INTEGER NOT NULL)`,
@@ -46,6 +50,8 @@ const ADDED: [table: string, column: string, type: string][] = [
   ["responses", "delivered_at", "TEXT"],
   ["responses", "acked_at", "TEXT"],
   ["sessions", "external_id", "TEXT"],
+  ["prs", "status", "TEXT"],
+  ["prs", "note", "TEXT"],
 ];
 
 export async function migrate(db: Db) {
@@ -127,9 +133,15 @@ export async function ingest(db: Db, p: IngestPayload, now = new Date().toISOStr
 const ITEM_COLS = `id, source, home, native_id, kind, state, title, detail, repo, owner, agent, model, url, started_at, updated_at, handoff_from, ask, parent_id, first_seen, last_seen, present,
   (SELECT count(*) FROM events WHERE events.item_id = items.id) AS event_count,
   (SELECT count(*) FROM prs WHERE prs.item_id = items.id) AS pr_count,
-  (SELECT group_concat(harness) FROM (SELECT DISTINCT harness FROM sessions WHERE sessions.task_id = items.id)) AS harnesses`;
+  (SELECT group_concat(harness) FROM (SELECT DISTINCT harness FROM sessions WHERE sessions.task_id = items.id)) AS harnesses,
+  (SELECT json_group_array(json_object('url', url, 'status', status)) FROM prs WHERE prs.item_id = items.id) AS pr_list`;
 
-const parseItem = (r: any): Item => ({ ...r, ask: r.ask ? JSON.parse(r.ask) : null, harnesses: r.harnesses ? String(r.harnesses).split(",") : [] });
+const parseItem = (r: any): Item => ({
+  ...r,
+  ask: r.ask ? JSON.parse(r.ask) : null,
+  harnesses: r.harnesses ? String(r.harnesses).split(",") : [],
+  pr_list: r.pr_list ? JSON.parse(r.pr_list) : [],
+});
 
 export async function listItems(db: Db, f: ItemFilter = {}): Promise<Item[]> {
   const where: string[] = [], params: unknown[] = [];
@@ -147,7 +159,7 @@ export async function listItems(db: Db, f: ItemFilter = {}): Promise<Item[]> {
   params.push(Math.min(f.limit ?? 500, 2000));
   const rows = await db.all(
     `SELECT ${ITEM_COLS} FROM items ${where.length ? "WHERE " + where.join(" AND ") : ""}
-     ORDER BY CASE state WHEN 'needs_me' THEN 0 WHEN 'failed' THEN 1 WHEN 'answered' THEN 2 WHEN 'underway' THEN 3 WHEN 'gated' THEN 4 WHEN 'landed' THEN 5 ELSE 6 END,
+     ORDER BY CASE state WHEN 'needs_me' THEN 0 WHEN 'failed' THEN 1 WHEN 'review' THEN 2 WHEN 'answered' THEN 3 WHEN 'validating' THEN 4 WHEN 'underway' THEN 5 WHEN 'gated' THEN 6 WHEN 'landed' THEN 7 ELSE 8 END,
        coalesce(updated_at, last_seen) DESC LIMIT ?`,
     params,
   );
@@ -160,6 +172,7 @@ export interface ItemDetail {
   prs: Pr[];
   sessions: Session[];
   responses: TrackerResponse[];
+  messages: CaptainMessage[];
 }
 
 /** Accepts a full id or a unique native id. */
@@ -168,17 +181,19 @@ export async function getItem(db: Db, idOrNative: string): Promise<ItemDetail | 
     `SELECT ${ITEM_COLS}, raw FROM items WHERE id = ? OR native_id = ? LIMIT 2`, [idOrNative, idOrNative]);
   if (rows.length !== 1) return rows.length ? { ambiguous: rows.map((r) => r.id) } : null;
   const item = rows[0];
-  const [events, prs, responses, sessions] = await Promise.all([
+  const [events, prs, responses, sessions, messages] = await Promise.all([
     db.all<TrackerEvent>(`SELECT * FROM events WHERE item_id = ? ORDER BY ts DESC, rowid DESC LIMIT 200`, [item.id]),
     db.all<Pr>(`SELECT * FROM prs WHERE item_id = ? ORDER BY seen_at DESC`, [item.id]),
     db.all(`SELECT * FROM responses WHERE item_id = ? ORDER BY id DESC`, [item.id]),
     db.all<Session>(`SELECT * FROM sessions WHERE task_id = ? ORDER BY started_at`, [item.id]),
+    db.all<CaptainMessage>(`SELECT * FROM messages WHERE item_id = ? ORDER BY id DESC`, [item.id]),
   ]);
   return {
     item: { ...parseItem(item), raw: item.raw ? JSON.parse(item.raw) : null },
     events,
     prs,
     sessions,
+    messages,
     responses: responses.map((r): TrackerResponse => ({ ...r, answers: r.answers ? JSON.parse(r.answers) : undefined } as TrackerResponse)),
   };
 }
@@ -216,7 +231,7 @@ export interface Session {
 export async function timeline(db: Db, since: string) {
   const items = (await db.all(
     `SELECT ${ITEM_COLS} FROM items WHERE present = 1 AND
-       (state IN ('underway', 'needs_me', 'answered', 'failed') OR coalesce(updated_at, last_seen) >= ?)
+       (state IN ('underway', 'needs_me', 'answered', 'review', 'validating', 'failed') OR coalesce(updated_at, last_seen) >= ?)
      ORDER BY coalesce(started_at, first_seen)`, [since])).map(parseItem);
   const ids = items.map((i) => i.id);
   const real = ids.length
