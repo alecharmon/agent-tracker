@@ -1,12 +1,18 @@
 {
   "url": "https://agents.example.com",
   "account_id": "<cloudflare account id>",
+  "kv_namespace_id": "<from: npx wrangler kv namespace create OAUTH_KV>",
   "access": {
     "allow": {
-      "emails": ["you@example.com"],
+      "emails": [
+        "you@example.com"
+      ],
       "email_domains": [],
       "github_orgs": []
     },
-    "login_methods": ["onetimepin", "github"]
+    "login_methods": [
+      "onetimepin",
+      "github"
+    ]
   }
 }

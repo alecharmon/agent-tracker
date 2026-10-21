@@ -6,3 +6,5 @@ dist/
 *.db
 .DS_Store
 tracker.config.json
+worker/.wrangler.deploy.json
+evals/results/

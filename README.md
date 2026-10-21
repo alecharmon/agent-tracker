@@ -49,13 +49,13 @@ You need Node 22.18 or later, a Cloudflare account with Zero Trust enabled (the 
 npm install
 cp tracker.config.example.json tracker.config.json   # your URL, account id and allowed emails
 npx wrangler login
-npx wrangler kv namespace create OAUTH_KV             # put the id in worker/wrangler.jsonc
-npm run build && npm run deploy -w @agent-tracker/worker
+npx wrangler kv namespace create OAUTH_KV             # put the id in tracker.config.json
+npm run deploy
 cf auth create personal
 npm run setup:access -- --write-secrets               # Access app, policy and Worker secrets
 ```
 
-`worker/wrangler.jsonc` pins `account_id` and `TRACKER_URL`, so set both for your account before deploying. `docs/auth.md` covers the sign-in design and the deploy steps in more detail.
+`tracker.config.json` is gitignored. `npm run deploy` fills your account id, KV namespace and URL into the Worker config at deploy time, so the committed `worker/wrangler.jsonc` stays generic. `docs/auth.md` covers the sign-in design and the deploy steps in more detail.
 
 ## The CLI
 
@@ -84,3 +84,7 @@ npm test
 `worker/.dev.vars` sets `AUTH_DISABLED=1`. To run the real sign-in flow locally against a stub login page, use `DEV_LOGIN=1` as described in `docs/auth.md`.
 
 The code is a single TypeScript workspace: `core` (storage and task logic), `worker` (API, MCP, auth and the Durable Object), `cli` and `web`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -36,6 +36,7 @@
 {
   "url": "https://agents.example.com",
   "account_id": "<cloudflare account id>",
+  "kv_namespace_id": "<OAUTH_KV namespace id>",
   "access": {
     "allow": { "emails": ["you@example.com"], "email_domains": [], "github_orgs": [] },
     "login_methods": ["onetimepin", "github"]
@@ -55,12 +56,11 @@ Each person runs their own tracker from the same code, with their own config. `a
 ## Deploy checklist
 
 1. Log in to wrangler with your personal account: `npx wrangler login`.
-2. Create the KV namespace with `npx wrangler kv namespace create OAUTH_KV`, and put its id in `worker/wrangler.jsonc`.
-3. Set `vars.TRACKER_URL` in `worker/wrangler.jsonc` to the deployed origin.
-4. Copy `tracker.config.example.json` → `tracker.config.json` (gitignored) and fill it in.
-5. `npm run setup:access -- --dry-run`, then `npm run setup:access -- --write-secrets` (signed in with `cf auth create`)
-6. `npm run build && npm run deploy -w @agent-tracker/worker`
-7. On each machine: `AGENTS_URL=https://… agnt-trkr login` (or `--remote` over ssh). For MCP clients, add the server URL and sign in from the client.
+2. Create the KV namespace with `npx wrangler kv namespace create OAUTH_KV`.
+3. Copy `tracker.config.example.json` → `tracker.config.json` (gitignored) and fill in the URL, account id, KV namespace id and allowlist. `npm run deploy` writes them into the Worker config at deploy time.
+4. `npm run deploy`
+5. `npm run setup:access -- --dry-run`, then `npm run setup:access -- --write-secrets` (signed in with `cf auth create`; the Worker must exist first)
+6. On each machine: `AGENTS_URL=https://… agnt-trkr login` (or `--remote` over ssh). For MCP clients, add the server URL and sign in from the client.
 
 ## Local development
 
@@ -83,7 +83,7 @@ Here `.dev.vars.auth` holds `DEV_LOGIN=1`, `TRACKER_URL=http://127.0.0.1:8789`, 
 - a client-supplied `x-tracker-user` header is ignored;
 - answers and messages record who sent them.
 
-Not yet exercised against real Cloudflare Access: that needs the personal account login and a deploy.
+Also run against real Cloudflare Access after deploying: web sign-in with an email one-time code.
 
 ## Cost
 

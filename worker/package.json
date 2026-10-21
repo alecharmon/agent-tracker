@@ -4,8 +4,6 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8787",
-    "deploy": "wrangler deploy",
-    "login": "wrangler login",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

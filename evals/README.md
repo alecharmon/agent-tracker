@@ -11,7 +11,7 @@ npm run evals -- --harness fake --scenario ask,pr  # scripted agent: checks the 
 npm run evals -- --report                       # rescore saved records, rewrite report.md
 ```
 
-Each run gets a throwaway git repo under `$TMPDIR/agent-tracker-evals/<label>/`, the skill copied into the harness's project skill dir, and its **own** `wrangler dev` on `127.0.0.1:<8790+2i>` with its own state, so runs never share a board (and never touch the captain's :8787). Records land in `results/<label>/<run>.json`; `report.md` and the per-run event dumps are regenerated from them, so a rescore of the same records gives the same scores.
+Each run gets a throwaway git repo under `$TMPDIR/agent-tracker-evals/<label>/`, the skill copied into the harness's project skill dir, and its **own** `wrangler dev` on `127.0.0.1:<8790+2i>` with its own state, so runs never share a board (and never touch the captain's :8787). Records land in `results/<label>/<run>.json` (gitignored: they're local run data); `report.md` and the per-run event dumps are regenerated from them, so a rescore of the same records gives the same scores.
 
 ## Scenarios
 

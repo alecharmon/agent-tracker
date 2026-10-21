@@ -11,6 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { writeDeployConfig } from "./wrangler-config.mjs";
 
 const args = new Set(process.argv.slice(2));
 const dry = args.has("--dry-run");
@@ -97,8 +98,9 @@ if (!args.has("--write-secrets")) {
   if (!existingApp) console.log("Note: the client secret is only returned now, at creation. Without --write-secrets you'll need to rotate it later.");
   process.exit(0);
 }
+const deployConfig = writeDeployConfig();
 const put = (key, value) => {
-  const r = spawnSync("npx", ["wrangler", "secret", "put", key], { cwd: "worker", input: value, stdio: ["pipe", "ignore", "inherit"] });
+  const r = spawnSync("npx", ["wrangler", "secret", "put", key, "--config", deployConfig], { cwd: "worker", input: value, stdio: ["pipe", "ignore", "inherit"] });
   if (r.status !== 0) throw new Error(`wrangler secret put ${key} failed`);
   console.log(`stored ${key}`);
 };
