@@ -6,7 +6,19 @@ import { basename } from "node:path";
 // After each turn, watch for the captain's answer or follow-up messages, and start a new turn with them.
 // Talks to the tracker over HTTP (AGENTS_URL, default http://127.0.0.1:8787; AGENTS_TOKEN if auth is on).
 
-const BASE = (process.env.AGENTS_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+// Tracker URL: AGENTS_URL, else the CLI's configured url (`agnt-trkr config get url`, which also applies;
+// AGENTS_URL and defaults to http://127.0.0.1:8787). Resolved once per process.;
+let base: Promise<string> | null = null;
+function baseUrl(): Promise<string> {
+  base ??= process.env.AGENTS_URL
+    ? Promise.resolve(process.env.AGENTS_URL)
+    : new Promise((resolve) =>
+        execFile("agnt-trkr", ["config", "get", "url"], { timeout: 10_000 }, (err, out) =>
+          resolve(!err && out.trim() ? out.trim() : "http://127.0.0.1:8787"),
+        ),
+      );
+  return base.then((u) => u.replace(/\/$/, ""));
+}
 // Token: AGENTS_TOKEN, else the CLI's stored sign-in (`agnt-trkr token`, refreshed as needed);
 // with auth disabled locally neither is needed.;
 let cached: { token: string; at: number } | null = null;
@@ -28,7 +40,7 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 async function call(path: string, init: RequestInit = {}): Promise<any> {
-  const res = await fetch(BASE + path, {
+  const res = await fetch((await baseUrl()) + path, {
     ...init,
     headers: await authHeaders(),
     signal: init.signal ?? AbortSignal.timeout(60_000),

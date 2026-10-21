@@ -12,6 +12,6 @@ Copy it to the project's `.opencode/plugins/agent-tracker.ts`, or to `~/.config/
 
 Run with `opencode --standalone`, or restart the background service (`opencode service`) after installing. The shared background service doesn't pick up a project's plugin, or its environment, until it restarts.
 
-Settings: `AGENTS_URL` (default `http://127.0.0.1:8787`), `AGENTS_TOKEN`, `AGENTS_HOOK_WAIT_HOURS` (default 1). `AGENTS_DEBUG_LOG=<file>` logs the events it sees.
+Settings: `AGENTS_URL` (default: the CLI's configured url, `agnt-trkr config get url`), `AGENTS_TOKEN`, `AGENTS_HOOK_WAIT_HOURS` (default 1). `AGENTS_DEBUG_LOG=<file>` logs the events it sees.
 
 Live-tested on v2.0.20 with Muse Spark 1.3.

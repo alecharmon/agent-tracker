@@ -14,4 +14,4 @@
 - **Per project:** copy it to `.pi/extensions/agent-tracker.ts`. Pi asks once to trust the project.
 - **For one run:** `pi -e integrations/pi/agent-tracker.ts`.
 
-Settings: `AGENTS_URL` (default `http://127.0.0.1:8787`), `AGENTS_TOKEN`, `AGENTS_HOOK_WAIT_HOURS` (default 1).
+Settings: `AGENTS_URL` (default: the CLI's configured url, `agnt-trkr config get url`), `AGENTS_TOKEN`, `AGENTS_HOOK_WAIT_HOURS` (default 1).
