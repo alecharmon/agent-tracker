@@ -23,7 +23,7 @@ Use the `agent-tracker` MCP tools when you have them; otherwise the `agents task
    - Title: a short imperative, e.g. "Fix flaky login test".
    - Pass `repo` (the working-directory basename), `machine` (`hostname -s`) and `model` (your model name). Pass `session` when your harness gave you a session id. The CLI fills repo and machine itself; give it `--model`.
    - Handed a task key, in your prompt or as `$AGENTS_TASK_KEY`? Pass it as `key`: you join that task.
-   - Done when you hold a `task_id` from a start that carried repo, machine and model. Pass that `task_id` unchanged to every later MCP call, for the rest of the session, including after you finish. The CLI remembers it: later commands need no `--task`.
+   - Done when you hold a `task_id`. Give repo, machine and model in that one call: it is your only start. Pass that `task_id` unchanged to every later MCP call, for the rest of the session, including after you finish. The CLI remembers it: later commands need no `--task`.
 
 2. **Milestone** each result the captain would want to read: cause found, fix committed, tests green, PR opened, deploy run.
    - One line, past tense, with its link when there is one.

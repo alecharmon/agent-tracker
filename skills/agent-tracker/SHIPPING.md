@@ -8,7 +8,7 @@
 2. **Review.** Once your PRs are up and their CI is reported, finish with outcome `review`: what's in them, plus the PR `url`. Then end your turn; the merge reaches you as a captain message.
    - Done when the call returns `review`.
 
-3. **Validate.** When a reply's `note` or a captain message says your PRs merged, check that the change works where it shipped: tests on main, the deploy, the behaviour.
+3. **Validate.** When a reply's `note` or a captain message says your PRs merged, check that the change works where it landed: tests on main, and the live behaviour if it's already deployed. Deploying it further is a new decision, and the captain's call.
    - Done when you've run that check and seen its result.
 
 4. **Finish.** `done` with what you checked, or `failed` with what broke and what remains.

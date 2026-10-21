@@ -318,7 +318,7 @@ export async function captainStage(db: Db, idOrNative: string, stage: unknown, n
 
 const PR_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 const VALIDATE = (prs: string) =>
-  `Merged: ${prs}. Validate it now: confirm the change works where it shipped (tests on main, the deploy, the behaviour), then call task_done with outcome done and what you checked, or report what failed.`;
+  `Merged: ${prs}. Validate it now: confirm the change works where it landed (tests on main, and the live behaviour if it is already deployed; deploying further is the captain's call), then call task_done with outcome done and what you checked, or report what failed.`;
 
 /**
  * A task's PRs settle its state: every PR merged or closed (at least one merged) -> validating;
