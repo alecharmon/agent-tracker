@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "XDG_CONFIG_HOME=$HOME/.config/wrangler-personal wrangler dev --port 8787",
-    "deploy": "XDG_CONFIG_HOME=$HOME/.config/wrangler-personal wrangler deploy",
-    "login": "XDG_CONFIG_HOME=$HOME/.config/wrangler-personal wrangler login",
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "login": "wrangler login",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

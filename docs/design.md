@@ -66,4 +66,4 @@ The collector only reads over ssh. It never writes to either host and never fetc
 
 ## Cost
 Requests, at about 300/day from a 5-minute sync plus casual reads, stay far below the free plan's 100k/day. DO storage stays well under 1 GB. The expected cost is **$0** on Workers Free or within the Workers Paid baseline. 
-**Account:** this runs on the captain's **personal** Cloudflare account, not a work account. The repo's wrangler scripts set `XDG_CONFIG_HOME=~/.config/wrangler-personal`, so the work login stays untouched. One-time login: `XDG_CONFIG_HOME=~/.config/wrangler-personal npx wrangler login`. Nothing is deployed until the captain says so; development uses `wrangler dev` locally.
+**Account:** this runs on the captain's **personal** Cloudflare account, not a work account. `worker/wrangler.jsonc` pins the personal `account_id`, so deploys can't land in another account. Nothing is deployed until the captain says so; development uses `wrangler dev` locally.

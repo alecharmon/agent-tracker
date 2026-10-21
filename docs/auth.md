@@ -54,8 +54,8 @@ Each person runs their own tracker from the same code, with their own config. `a
 
 ## Deploy checklist
 
-1. Log in to wrangler with your personal account: `XDG_CONFIG_HOME=~/.config/wrangler-personal npx wrangler login`.
-2. Create the KV namespace with `npx wrangler kv namespace create OAUTH_KV` (same XDG_CONFIG_HOME), and put its id in `worker/wrangler.jsonc`.
+1. Log in to wrangler with your personal account: `npx wrangler login`.
+2. Create the KV namespace with `npx wrangler kv namespace create OAUTH_KV`, and put its id in `worker/wrangler.jsonc`.
 3. Set `vars.TRACKER_URL` in `worker/wrangler.jsonc` to the deployed origin.
 4. Copy `tracker.config.example.json` → `tracker.config.json` (gitignored) and fill it in.
 5. `CLOUDFLARE_API_TOKEN=… npm run setup:access -- --write-secrets`

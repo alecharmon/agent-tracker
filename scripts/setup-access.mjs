@@ -5,13 +5,11 @@
 //   CLOUDFLARE_API_TOKEN=… node scripts/setup-access.mjs [--dry-run] [--write-secrets]
 //
 // The token needs Account › Access: Apps and Policies › Edit, and Access: Organizations, Identity Providers › Read.
-// --write-secrets pipes ACCESS_*, TRACKER_ALLOW and SESSION_SECRET into `wrangler secret put` (personal account
-// wrangler config); secret values are never printed.
+// --write-secrets pipes ACCESS_*, TRACKER_ALLOW and SESSION_SECRET into `wrangler secret put` (the Worker's
+// pinned account_id decides where); secret values are never printed.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 const args = new Set(process.argv.slice(2));
 const dry = args.has("--dry-run");
@@ -97,7 +95,7 @@ if (!args.has("--write-secrets")) {
   process.exit(0);
 }
 if (dry) process.exit(0);
-const env = { ...process.env, XDG_CONFIG_HOME: join(homedir(), ".config/wrangler-personal") };
+const env = process.env;
 const put = (key, value) => {
   const r = spawnSync("npx", ["wrangler", "secret", "put", key], { cwd: "worker", input: value, env, stdio: ["pipe", "ignore", "inherit"] });
   if (r.status !== 0) throw new Error(`wrangler secret put ${key} failed`);
