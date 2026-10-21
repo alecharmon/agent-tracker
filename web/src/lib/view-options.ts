@@ -38,7 +38,7 @@ export function matches(i: Item, o: ViewOptions) {
   if (st && !(st as readonly string[]).includes(i.state)) return false
   if (o.project && i.repo !== o.project) return false
   if (o.q.trim()) {
-    const hay = [i.title, i.detail, i.repo, i.native_id, i.model, ...i.harnesses.map(harnessLabel)].join(" ").toLowerCase()
+    const hay = [i.title, i.detail, i.repo, i.native_id, i.model, ...i.machines, ...i.harnesses.map(harnessLabel)].join(" ").toLowerCase()
     if (!o.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))) return false
   }
   return true

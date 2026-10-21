@@ -98,6 +98,11 @@ export default Plugin.define({
       if (watchers.get(sid) === ac) watchers.delete(sid)
     }
 
+    // This machine's name from the CLI config (`agnt-trkr config set machine …`), else whoami@host.
+    let machine = process.env.AGENTS_MACHINE ?? `${process.env.USER ?? "user"}@${(process.env.HOSTNAME ?? "").split(".")[0] || "host"}`
+    execFile("agnt-trkr", ["config", "get", "machine"], { timeout: 10_000 }, (err, out) => {
+      if (!err && out.trim()) machine = out.trim()
+    })
     // Tell the model its session id, so task_start links the task to this session.
     void ctx.session.hook("context", (event: any) => {
       const sid = event.sessionID ?? event.session?.id
@@ -105,7 +110,7 @@ export default Plugin.define({
       if (!sid) return
       event.system.push({
         type: "text",
-        text: `agent-tracker: your harness session id is ${sid}; pass session: "${sid}" to task_start. This session wakes automatically when the captain answers a task_ask: after asking, end your turn instead of polling task_answers; the answer starts your next turn.`,
+        text: `agent-tracker: your harness session id is ${sid} and this machine is "${machine}"; pass session: "${sid}" and machine: "${machine}" to task_start. This session wakes automatically when the captain answers a task_ask: after asking, end your turn instead of polling task_answers; the answer starts your next turn.`,
       })
     })
 

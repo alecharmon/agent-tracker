@@ -202,7 +202,7 @@ export function Lanes({ onOpen, options }: { onOpen: (i: Item, siblings: Item[])
                       <span className="truncate text-sm font-medium" title={r.item.title}>{r.item.title}</span>
                     </span>
                     <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                      <span className="truncate">{[STATE_LABEL[r.item.state], r.item.repo].filter(Boolean).join(" · ")}</span>
+                      <span className="truncate">{[STATE_LABEL[r.item.state], r.item.repo, r.item.machines.join(", ")].filter(Boolean).join(" · ")}</span>
                       <span className="ml-1 flex shrink-0 -space-x-1">
                         {harnesses.map((h) => (
                           <span key={h} title={harnessLabel(h)} className="flex size-4 items-center justify-center rounded-full border bg-card">

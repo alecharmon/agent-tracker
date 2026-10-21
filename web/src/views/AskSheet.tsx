@@ -111,7 +111,7 @@ function DetailBody({ item, Title, Description }: { item: Item; Title: Slot; Des
         </span>
         <Title className="text-base font-semibold">{item.title}</Title>
         <Description className="text-sm text-muted-foreground">
-          {[item.repo, item.harnesses.map(harnessLabel).join(" → ") || lane(item), item.model].filter(Boolean).join(" · ")}
+          {[item.repo, item.harnesses.map(harnessLabel).join(" → ") || lane(item), item.model, item.machines.length ? `on ${item.machines.join(", ")}` : null].filter(Boolean).join(" · ")}
         </Description>
         <div className="flex flex-wrap items-center gap-2 text-xs"><Status item={item} now={now} /></div>
         {prsOf(item).length > 0 && (
@@ -174,7 +174,7 @@ function AskBody({ item, onDone, Title, Description }: { item: Item; onDone: () 
           <StateIcon state="needs_me" className="size-3" /> Needs you · waiting {duration(item.updated_at ?? item.last_seen, now)}
         </span>
         <Title className="text-base font-semibold">{item.title}</Title>
-        <Description className="text-sm text-muted-foreground">{[item.repo, item.harnesses.map(harnessLabel).join(" → ") || lane(item), item.model].filter(Boolean).join(" · ")}</Description>
+        <Description className="text-sm text-muted-foreground">{[item.repo, item.harnesses.map(harnessLabel).join(" → ") || lane(item), item.model, item.machines.length ? `on ${item.machines.join(", ")}` : null].filter(Boolean).join(" · ")}</Description>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">

@@ -1,10 +1,8 @@
 #!/usr/bin/env -S node --no-warnings
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { parseArgs, styleText } from "node:util";
 import { type Item, stubPayloads } from "@agent-tracker/core";
 import { accessToken, login, logout, signedInAs } from "./auth.ts";
+import { CONFIG_KEYS, type ConfigKey, configPath, defaultMachine, machineName, readConfig, writeConfig } from "./config.ts";
 import { hook } from "./hook.ts";
 import { task, TASK_USAGE } from "./task.ts";
 
@@ -19,6 +17,8 @@ const USAGE = `agnt-trkr — track agent work
   agnt-trkr login [--remote]   sign in (Cloudflare Access via the tracker); --remote prints a URL + code prompt
   agnt-trkr logout | whoami    forget the stored sign-in / show who you are
   agnt-trkr token              print a fresh access token (for plugins and scripts)
+  agnt-trkr config [get <key> | set <key> <value> | unset <key>]   per-machine settings: url, machine
+                            (machine: how this machine shows on tasks; default whoami@hostname)
   agnt-trkr seed               load the stub fleet into the backend (local dev)
   agnt-trkr task …             for agents: start | update | ask | answers | done | fail (agnt-trkr task help)
   agnt-trkr hook <claude-code|codex|devin> <session-start|prompt|stop|session-end>   harness hook handler (stdin: hook JSON)
@@ -28,10 +28,7 @@ const USAGE = `agnt-trkr — track agent work
   config: ~/.config/agent-tracker/config.json  {"url": "...", "token": "..."}`;
 
 function config() {
-  let file: { url?: string; token?: string } = {};
-  try {
-    file = JSON.parse(readFileSync(join(homedir(), ".config/agent-tracker/config.json"), "utf8"));
-  } catch {}
+  const file = readConfig();
   const url = (process.env.AGENTS_URL ?? file.url ?? "http://localhost:8787").replace(/\/$/, "");
   return { url, token: process.env.AGENTS_TOKEN ?? file.token };
 }
@@ -98,7 +95,7 @@ async function main(argv: string[]) {
       wait: { type: "string" }, harness: { type: "string" }, session: { type: "string" }, "ask-json": { type: "string" },
       question: { type: "string", multiple: true }, option: { type: "string", short: "o", multiple: true },
       "no-other": { type: "boolean" }, dispatch: { type: "boolean" }, status: { type: "string" }, note: { type: "string" },
-      remote: { type: "boolean" },
+      remote: { type: "boolean" }, machine: { type: "string" },
     },
   });
   if (o.help || cmd === "help") return console.log(USAGE);
@@ -169,6 +166,26 @@ async function main(argv: string[]) {
       const t = await bearer(config().url);
       if (!t) throw new Error("not signed in: run `agnt-trkr login`");
       return console.log(t);
+    }
+    case "config": {
+      const [sub, key, ...val] = rest;
+      if (!sub) {
+        const c = readConfig();
+        return out({ ...c, token: c.token ? "<set>" : undefined, path: configPath }, () => {
+          console.log(`url      ${config().url}${c.url ? "" : "  (default)"}`);
+          console.log(`machine  ${machineName()}${c.machine ? "" : `  (default: ${defaultMachine()})`}`);
+          console.log(`file     ${configPath}`);
+        });
+      }
+      if (!CONFIG_KEYS.includes(key as ConfigKey)) throw new Error(`key must be one of ${CONFIG_KEYS.join(", ")}`);
+      if (sub === "get") return console.log(key === "machine" ? machineName() : key === "url" ? config().url : readConfig()[key as ConfigKey] ?? "");
+      if (sub === "set") {
+        if (!val.length) throw new Error(`usage: agnt-trkr config set ${key} <value>`);
+        writeConfig(key as ConfigKey, val.join(" "));
+        return console.log(`${key} = ${key === "token" ? "<set>" : val.join(" ")}`);
+      }
+      if (sub === "unset") return (writeConfig(key as ConfigKey, null), console.log(`${key} unset`));
+      throw new Error("usage: agnt-trkr config [get <key> | set <key> <value> | unset <key>]");
     }
     case "hook":
       return hook(call, rest[0], rest[1]);

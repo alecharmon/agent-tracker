@@ -1,4 +1,4 @@
-import { CheckCheckIcon, ExternalLinkIcon, GitMergeIcon, LoaderCircleIcon, GitPullRequestIcon, KanbanIcon, ListIcon, MessageSquareIcon, RotateCwIcon, SendIcon, SparkleIcon, XIcon } from "lucide-react"
+import { CheckCheckIcon, ExternalLinkIcon, LaptopIcon, GitMergeIcon, LoaderCircleIcon, GitPullRequestIcon, KanbanIcon, ListIcon, MessageSquareIcon, RotateCwIcon, SendIcon, SparkleIcon, XIcon } from "lucide-react"
 import { AnimatePresence, LayoutGroup, motion } from "motion/react"
 import * as React from "react"
 import { RichText, shortUrl } from "@/components/rich-text"
@@ -114,7 +114,13 @@ function Card({ item: i, now, open, onPick, row, as = "article" }: {
               <span className="sr-only">Worked on by {i.harnesses.map(harnessLabel).join(", ")}</span>
             </span>
           )}
-          <span className={cn("flex items-center gap-1", !row && "ml-auto")} title="Status events">
+          {i.machines.length > 0 && (
+            <span className="flex min-w-0 items-center gap-1 truncate" title={`Running on ${i.machines.join(", ")}`}>
+              <LaptopIcon className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{i.machines.join(", ")}</span>
+            </span>
+          )}
+          <span className={cn("flex shrink-0 items-center gap-1", !row && "ml-auto")} title="Status events">
             <ListIcon className="size-3.5" aria-hidden />{i.event_count}<span className="sr-only"> events</span>
           </span>
           <span className="flex items-center gap-1 border-l pl-3" title="Pull requests">

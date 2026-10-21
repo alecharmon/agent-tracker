@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { machineName } from "./config.ts";
 import { join } from "node:path";
 
 type Call = (path: string, init?: RequestInit) => Promise<any>;
@@ -108,11 +109,11 @@ export async function hook(call: Call, harness: string, event: string) {
     case "session-start": {
       // Later Bash commands inherit these, so `agnt-trkr task …` links to this session.
       if (process.env.CLAUDE_ENV_FILE)
-        appendFileSync(process.env.CLAUDE_ENV_FILE, `export AGENTS_HARNESS=${harness}\nexport AGENTS_SESSION=${JSON.stringify(sid)}\n`);
+        appendFileSync(process.env.CLAUDE_ENV_FILE, `export AGENTS_HARNESS=${harness}\nexport AGENTS_SESSION=${JSON.stringify(sid)}\nexport AGENTS_MACHINE=${JSON.stringify(machineName())}\n`);
       let current: any = null;
       await quiet(async () => (current = await call(base)));
       const context = [
-        `agent-tracker: your harness session id is ${sid}. Pass session: "${sid}" to task_start (the CLI picks it up from $AGENTS_SESSION).`,
+        `agent-tracker: your harness session id is ${sid} and this machine is "${machineName()}". Pass session: "${sid}" and machine: "${machineName()}" to task_start (the CLI picks both up itself).`,
         HELD.includes(harness) ? WAKES_HELD : WAKES,
         current?.task_id
           ? `This session already works on "${current.title}" (task_id ${current.task_id}, state ${current.state}); keep using that task_id.`

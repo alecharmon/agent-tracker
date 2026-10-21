@@ -99,6 +99,8 @@ export interface Item {
   pr_count: number;
   /** Harnesses whose sessions worked on this task. */
   harnesses: string[];
+  /** Machines those sessions ran on (each machine's configured name). */
+  machines: string[];
   /** Every PR on the task with its last reported status. */
   pr_list: { url: string; status: PrStatus | null }[];
 }

@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { harnessOf } from "@agent-tracker/core";
+import { machineName } from "./config.ts";
 
 type Call = (path: string, init?: RequestInit) => Promise<any>;
 
@@ -109,7 +110,7 @@ export async function task(call: Call, args: string[], flags: Record<string, any
       const r = await post("/api/tasks", {
         title: text, key: flags.key ?? process.env.AGENTS_TASK_KEY, parent: flags.parent, detail: flags.detail,
         model: flags.model ?? process.env.AGENTS_MODEL, agent: flags.agent,
-        repo: flags.repo ?? repoName(), machine: hostname().split(".")[0], harness: flags.harness ?? detectHarness(),
+        repo: flags.repo ?? repoName(), machine: flags.machine ?? machineName(), harness: flags.harness ?? detectHarness(),
         session: flags.session ?? process.env.AGENTS_SESSION, dispatch: flags.dispatch,
       });
       if (!r.dispatched) {

@@ -136,12 +136,14 @@ const ITEM_COLS = `id, source, home, native_id, kind, state, title, detail, repo
   (SELECT count(*) FROM events WHERE events.item_id = items.id) AS event_count,
   (SELECT count(*) FROM prs WHERE prs.item_id = items.id) AS pr_count,
   (SELECT group_concat(harness) FROM (SELECT DISTINCT harness FROM sessions WHERE sessions.task_id = items.id)) AS harnesses,
+  (SELECT group_concat(machine, char(31)) FROM (SELECT DISTINCT machine FROM sessions WHERE sessions.task_id = items.id AND machine IS NOT NULL)) AS machines,
   (SELECT json_group_array(json_object('url', url, 'status', status)) FROM prs WHERE prs.item_id = items.id) AS pr_list`;
 
 const parseItem = (r: any): Item => ({
   ...r,
   ask: r.ask ? JSON.parse(r.ask) : null,
   harnesses: r.harnesses ? String(r.harnesses).split(",") : [],
+  machines: r.machines ? String(r.machines).split("\u001f") : [],
   pr_list: r.pr_list ? JSON.parse(r.pr_list) : [],
 });
 
