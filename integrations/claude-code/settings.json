@@ -1,8 +1,8 @@
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "agents hook claude-code session-start", "timeout": 10 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "agents hook claude-code prompt", "timeout": 10 }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "agents hook claude-code stop", "asyncRewake": true, "timeout": 3600 }] }],
-    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "agents hook claude-code session-end", "timeout": 5 }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook claude-code session-start", "timeout": 10 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook claude-code prompt", "timeout": 10 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook claude-code stop", "asyncRewake": true, "timeout": 3600 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook claude-code session-end", "timeout": 5 }] }]
   }
 }

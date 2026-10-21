@@ -7,14 +7,14 @@ import { basename } from "node:path";
 // Talks to the tracker over HTTP (AGENTS_URL, default http://127.0.0.1:8787; AGENTS_TOKEN if auth is on).
 
 const BASE = (process.env.AGENTS_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
-// Token: AGENTS_TOKEN, else the CLI's stored sign-in (`agents token`, refreshed as needed);
+// Token: AGENTS_TOKEN, else the CLI's stored sign-in (`agnt-trkr token`, refreshed as needed);
 // with auth disabled locally neither is needed.;
 let cached: { token: string; at: number } | null = null;
 function token(): Promise<string> {
   if (process.env.AGENTS_TOKEN) return Promise.resolve(process.env.AGENTS_TOKEN);
   if (cached && Date.now() - cached.at < 5 * 60_000) return Promise.resolve(cached.token);
   return new Promise((resolve) =>
-    execFile("agents", ["token"], { timeout: 15_000 }, (err, out) => {
+    execFile("agnt-trkr", ["token"], { timeout: 15_000 }, (err, out) => {
       cached = err ? null : { token: out.trim(), at: Date.now() };
       resolve(cached?.token ?? "");
     }),
@@ -54,7 +54,7 @@ function answerMessage(a: any) {
 }
 
 const CONTEXT =
-  "agent-tracker: this session wakes automatically when the captain answers a task question: after `agents task ask`, end your turn instead of polling `agents task answers`; the answer starts your next turn.";
+  "agent-tracker: this session wakes automatically when the captain answers a task question: after `agnt-trkr task ask`, end your turn instead of polling `agnt-trkr task answers`; the answer starts your next turn.";
 
 export default function (pi: ExtensionAPI) {
   let session = "";
@@ -95,7 +95,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     const file = ctx.sessionManager.getSessionFile?.();
     session = file ? basename(file).replace(/\.jsonl$/, "") : `pi-${process.pid}`;
-    // bash children inherit these, so `agents task …` links tasks to this session
+    // bash children inherit these, so `agnt-trkr task …` links tasks to this session
     process.env.AGENTS_HARNESS = "pi";
     process.env.AGENTS_SESSION = session;
   });

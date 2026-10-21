@@ -6,14 +6,14 @@ import { appendFileSync } from "node:fs"
 // After each turn, watch for the captain's answer or follow-up messages, and prompt the session with them.
 
 const BASE = (process.env.AGENTS_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "")
-// Token: AGENTS_TOKEN, else the CLI's stored sign-in (`agents token`, refreshed as needed)
+// Token: AGENTS_TOKEN, else the CLI's stored sign-in (`agnt-trkr token`, refreshed as needed)
 // with auth disabled locally neither is needed.
 let cached: { token: string; at: number } | null = null
 function token(): Promise<string> {
   if (process.env.AGENTS_TOKEN) return Promise.resolve(process.env.AGENTS_TOKEN)
   if (cached && Date.now() - cached.at < 5 * 60_000) return Promise.resolve(cached.token)
   return new Promise((resolve) =>
-    execFile("agents", ["token"], { timeout: 15_000 }, (err, out) => {
+    execFile("agnt-trkr", ["token"], { timeout: 15_000 }, (err, out) => {
       cached = err ? null : { token: out.trim(), at: Date.now() }
       resolve(cached?.token ?? "")
     }),

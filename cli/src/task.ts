@@ -6,22 +6,22 @@ import { harnessOf } from "@agent-tracker/core";
 
 type Call = (path: string, init?: RequestInit) => Promise<any>;
 
-export const TASK_USAGE = `agents task — report your work (for agents)
+export const TASK_USAGE = `agnt-trkr task — report your work (for agents)
 
-  agents task start "<title>" [--key k] [--parent k] [--dispatch] [--detail d] [--model m] [--repo r]
+  agnt-trkr task start "<title>" [--key k] [--parent k] [--dispatch] [--detail d] [--model m] [--repo r]
                                       --dispatch creates it for another agent (yours stays current)
                                       --key joins the task with that key (default: $AGENTS_TASK_KEY)
-  agents task update "<what you did or are doing>" [--url u]
-  agents task ask "<what you need and why>" -q "<question?>" -o "<option>[|<consequence>]" [-o …] [-q …] [--no-other]
-  agents task ask --ask-json '<{"summary":…,"questions":[…]}>'
-  agents task answers [--wait 25]     the captain's answer: answered | pending | no_question
-  agents task pr <pr-url> --status <open|ci_running|ci_passed|ci_failed|merged|closed> [--note n]
+  agnt-trkr task update "<what you did or are doing>" [--url u]
+  agnt-trkr task ask "<what you need and why>" -q "<question?>" -o "<option>[|<consequence>]" [-o …] [-q …] [--no-other]
+  agnt-trkr task ask --ask-json '<{"summary":…,"questions":[…]}>'
+  agnt-trkr task answers [--wait 25]     the captain's answer: answered | pending | no_question
+  agnt-trkr task pr <pr-url> --status <open|ci_running|ci_passed|ci_failed|merged|closed> [--note n]
                                                        report each PR's status as it changes (several PRs per task is fine)
-  agents task review "<what's in the PR>" --url <pr>   PR open: done comes after merge + validation
-  agents task done "<result>" [--url u]                merged and validated (or no PR, verified)
-  agents task fail "<why>"
+  agnt-trkr task review "<what's in the PR>" --url <pr>   PR open: done comes after merge + validation
+  agnt-trkr task done "<result>" [--url u]                merged and validated (or no PR, verified)
+  agnt-trkr task fail "<why>"
   Any reply may carry captain_messages: follow-ups and direction from the captain. Act on them.
-  agents task id                      print the current task id
+  agnt-trkr task id                      print the current task id
 
   The task is remembered per tmux pane (or working directory). Juggling several tasks? Address one with
   --task <key or task_id>, or set AGENTS_TASK_ID.`;
@@ -67,7 +67,7 @@ function currentTask(explicit?: string): string {
       return "";
     }
   })();
-  if (!id) throw new Error('no current task: run `agents task start "<title>"` first (or pass --task <id>)');
+  if (!id) throw new Error('no current task: run `agnt-trkr task start "<title>"` first (or pass --task <id>)');
   return id;
 }
 
@@ -99,7 +99,7 @@ export async function task(call: Call, args: string[], flags: Record<string, any
   const enc = (id: string) => encodeURIComponent(id);
   switch (sub) {
     case "start": {
-      if (!text) throw new Error('usage: agents task start "<title>"');
+      if (!text) throw new Error('usage: agnt-trkr task start "<title>"');
       const r = await post("/api/tasks", {
         title: text, key: flags.key ?? process.env.AGENTS_TASK_KEY, parent: flags.parent, detail: flags.detail,
         model: flags.model ?? process.env.AGENTS_MODEL, agent: flags.agent,
@@ -113,7 +113,7 @@ export async function task(call: Call, args: string[], flags: Record<string, any
       return print(r);
     }
     case "update":
-      if (!text) throw new Error('usage: agents task update "<text>"');
+      if (!text) throw new Error('usage: agnt-trkr task update "<text>"');
       return print(await post(`/api/tasks/${enc(currentTask(flags.task))}/update`, { text, url: flags.url }));
     case "ask": {
       const ask = flags["ask-json"] ? JSON.parse(flags["ask-json"]) : { summary: text, questions: askFromFlags(raw, !!flags["no-other"]) };
@@ -128,19 +128,19 @@ export async function task(call: Call, args: string[], flags: Record<string, any
         return print(await call(`/api/tasks/${enc(id)}/answers?wait=${wait}`, { signal: AbortSignal.timeout((wait + 3) * 1000) }));
       } catch (e: any) {
         if (!/abort|timeout|cannot reach|fetch failed/i.test(`${e?.name} ${e?.message}`)) throw e;
-        return print({ task_id: id, status: "pending", note: "No reply from the tracker in time; call `agents task answers` again." });
+        return print({ task_id: id, status: "pending", note: "No reply from the tracker in time; call `agnt-trkr task answers` again." });
       }
     }
     case "done":
     case "review":
     case "fail": {
-      if (!text) throw new Error(`usage: agents task ${sub} "<text>"`);
+      if (!text) throw new Error(`usage: agnt-trkr task ${sub} "<text>"`);
       // The task stays current: the captain can still send follow-ups to this session.
       return print(await post(`/api/tasks/${enc(currentTask(flags.task))}/done`, { outcome: sub === "fail" ? "failed" : sub, text, url: flags.url }));
     }
     case "pr": {
       const [url] = rest;
-      if (!url || !flags.status) throw new Error("usage: agents task pr <pr-url> --status <open|ci_running|ci_passed|ci_failed|merged|closed> [--note n]");
+      if (!url || !flags.status) throw new Error("usage: agnt-trkr task pr <pr-url> --status <open|ci_running|ci_passed|ci_failed|merged|closed> [--note n]");
       return print(await post(`/api/tasks/${enc(currentTask(flags.task))}/pr`, { url, status: flags.status, note: flags.note }));
     }
     case "id":

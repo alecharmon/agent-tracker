@@ -2,7 +2,7 @@
 
 `agent-tracker.ts` is a Pi extension. It uses Pi's lifecycle events instead of the model:
 
-- **session_start:** exports `AGENTS_HARNESS=pi` / `AGENTS_SESSION` so that `agents task start` links the task to this session.
+- **session_start:** exports `AGENTS_HARNESS=pi` / `AGENTS_SESSION` so that `agnt-trkr task start` links the task to this session.
 - **agent_start:** the task goes back to running.
 - **agent_end:**
   - if the task is waiting on the captain, it watches for the answer in the background. When the answer lands it starts a new turn with it (`sendMessage`, `triggerTurn`).

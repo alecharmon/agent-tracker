@@ -44,7 +44,7 @@ The storage logic is plain SQL behind a tiny `Db` interface (`all`, `batch`). Th
 **Turso is deferred** at the captain's call. A libSQL adapter is about 20 lines against `Db` whenever it's wanted.
 
 ## Ingest flow
-`agents sync`, run on the Mac by hand or from launchd every 5 minutes, works like this:
+`agnt-trkr sync`, run on the Mac by hand or from launchd every 5 minutes, works like this:
 1. `ssh firstmate-vm 'cd ~/firstmate && bin/fm-bearings-snapshot.sh --json --all-queued --all-decisions'`. The collector parses the leading JSON object, because the script's stdout ends in terminal escape codes.
 2. It runs a single `ssh worker-host` command that prints `tail -n 200` of every `~/briefs/*/status.log`, with file markers.
 3. It normalizes the data in the CLI (`core/normalize.ts`) and makes one `POST /api/ingest` per (source, home).

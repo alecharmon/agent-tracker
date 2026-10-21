@@ -14,7 +14,7 @@ export async function api(db: Db, req: Request): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, "");
   if (path === "/mcp") return mcp(db, req);
   try {
-    // Agent task API (the CLI's `agents task …`; MCP tools call the same core functions).
+    // Agent task API (the CLI's `agnt-trkr task …`; MCP tools call the same core functions).
     if (req.method === "POST" && path === "/api/tasks") return json(await taskStart(db, await req.json()), 201);
     const task = path.match(/^\/api\/tasks\/(.+)\/(update|ask|answers|done|pending|pr)$/);
     if (task) {

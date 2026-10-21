@@ -13,6 +13,6 @@ Hooks only track. A tracker failure never blocks Claude.
 
 ## Install
 
-Requires the `agents` CLI on `PATH`, and the agent-tracker MCP server or skill.
+Requires the `agnt-trkr` CLI on `PATH`, and the agent-tracker MCP server or skill.
 
 Merge `settings.json` into the project's `.claude/settings.json`, or into `~/.claude/settings.json` to cover every project. Claude Code runs hooks only in trusted workspaces.

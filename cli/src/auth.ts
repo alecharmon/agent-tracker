@@ -6,7 +6,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 
-// `agents login`: OAuth 2.1 (authorization code + PKCE) against the tracker, which signs you in through
+// `agnt-trkr login`: OAuth 2.1 (authorization code + PKCE) against the tracker, which signs you in through
 // Cloudflare Access. Local machines use a loopback redirect; remote ones (ssh, --remote) show a code to paste.
 
 interface Cred {

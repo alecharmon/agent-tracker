@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "agents": "src/main.ts"
+    "agnt-trkr": "src/main.ts"
   },
   "dependencies": {
     "@agent-tracker/core": "*"

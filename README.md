@@ -18,7 +18,7 @@ The web app opens on the Inbox. Lanes is at `/#lanes`. Needs-you items open a pa
 
 ## Agent integrations
 
-Agents report through the MCP server (`/mcp`) or the `agents task` CLI, following `skills/agent-tracker`. Harness hooks add liveness and **wake on answer**: when the captain answers, a waiting agent resumes on its own.
+Agents report through the MCP server (`/mcp`) or the `agnt-trkr task` CLI, following `skills/agent-tracker`. Harness hooks add liveness and **wake on answer**: when the captain answers, a waiting agent resumes on its own.
 
 | Harness | Install | Wake on answer |
 |---|---|---|
@@ -30,6 +30,6 @@ Agents report through the MCP server (`/mcp`) or the `agents task` CLI, followin
 
 ## Auth
 
-The tracker is an OAuth server gated by Cloudflare Access login, with no API keys. The web app, `agents login` (also over ssh with `--remote`) and MCP clients all sign in the same way. Who's allowed lives in `tracker.config.json`, and `npm run setup:access` applies it. See [docs/auth.md](docs/auth.md).
+The tracker is an OAuth server gated by Cloudflare Access login, with no API keys. The web app, `agnt-trkr login` (also over ssh with `--remote`) and MCP clients all sign in the same way. Who's allowed lives in `tracker.config.json`, and `npm run setup:access` applies it. See [docs/auth.md](docs/auth.md).
 
 Local dev keeps `AUTH_DISABLED=1`. `DEV_LOGIN=1` runs the full flow against a stub sign-in page.

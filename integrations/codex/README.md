@@ -11,4 +11,4 @@ Codex hooks use the same events as Claude Code's, but Codex has no background re
 
 ## Install
 
-Copy `hooks.json` to the project's `.codex/hooks.json`, or merge it into `~/.codex/hooks.json`. The project must be trusted for its hooks to load. Requires the `agents` CLI on `PATH`.
+Copy `hooks.json` to the project's `.codex/hooks.json`, or merge it into `~/.codex/hooks.json`. The project must be trusted for its hooks to load. Requires the `agnt-trkr` CLI on `PATH`.

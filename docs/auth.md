@@ -6,7 +6,7 @@
 
 ```
           browser  ─┐                                   ┌─ Cloudflare Access login
- agents login (CLI) ─┼─► Tracker Worker (OAuth 2.1 AS) ─┤   (one-time email code, GitHub, Google…)
+ agnt-trkr login (CLI) ─┼─► Tracker Worker (OAuth 2.1 AS) ─┤   (one-time email code, GitHub, Google…)
  MCP clients        ─┘   /authorize /token /register    └─ Access for SaaS (OIDC) checks the policy
                           │
                           └─ resource server: /api/*, /mcp accept the Worker's access tokens
@@ -21,12 +21,12 @@
 | Client | Flow | Where tokens live |
 |---|---|---|
 | Web dashboard | `/login` → Access → back to the dashboard. An HttpOnly, SameSite=Lax session cookie holds the token. | cookie |
-| `agents login` (Mac) | authorization code + PKCE, with a loopback redirect (`http://127.0.0.1:<port>/callback`) | `~/.config/agent-tracker/credentials.json` (0600), auto-refresh |
-| `agents login` on a **remote machine** (ssh, no browser) | the same flow, but the redirect is the tracker's `/oauth/cli` page, which shows a one-time code. Open the printed URL on any device, sign in, and paste the code back into the terminal (like `gh auth login`). `--remote` forces it; it's chosen automatically when `$SSH_CONNECTION` is set or there's no display. | same file |
-| Harness hooks, Pi/OpenCode plugins | `agents token` prints a fresh access token from the stored credentials (refreshing if needed) | (via the CLI) |
+| `agnt-trkr login` (Mac) | authorization code + PKCE, with a loopback redirect (`http://127.0.0.1:<port>/callback`) | `~/.config/agent-tracker/credentials.json` (0600), auto-refresh |
+| `agnt-trkr login` on a **remote machine** (ssh, no browser) | the same flow, but the redirect is the tracker's `/oauth/cli` page, which shows a one-time code. Open the printed URL on any device, sign in, and paste the code back into the terminal (like `gh auth login`). `--remote` forces it; it's chosen automatically when `$SSH_CONNECTION` is set or there's no display. | same file |
+| Harness hooks, Pi/OpenCode plugins | `agnt-trkr token` prints a fresh access token from the stored credentials (refreshing if needed) | (via the CLI) |
 | MCP clients (Claude Code, Codex, OpenCode, Pi, Devin) | standard MCP OAuth: the client discovers `/.well-known/oauth-protected-resource`, registers, and opens the browser: `claude` `/mcp` → authenticate, `codex mcp login`, `opencode mcp auth`, `pi mcp login`, `devin mcp login` | the client's own store |
 
-**Remote MCP clients** run their callback on the remote machine's localhost. They either print a URL to finish in a local browser, which needs port forwarding, or fall back to the CLI path: `agents login --remote`, after which the hooks and CLI carry the agent. The skill already treats the CLI as a full alternative to MCP.
+**Remote MCP clients** run their callback on the remote machine's localhost. They either print a URL to finish in a local browser, which needs port forwarding, or fall back to the CLI path: `agnt-trkr login --remote`, after which the hooks and CLI carry the agent. The skill already treats the CLI as a full alternative to MCP.
 
 ## Config: who's allowed
 
@@ -60,7 +60,7 @@ Each person runs their own tracker from the same code, with their own config. `a
 4. Copy `tracker.config.example.json` → `tracker.config.json` (gitignored) and fill it in.
 5. `npm run setup:access -- --dry-run`, then `npm run setup:access -- --write-secrets` (signed in with `cf auth create`)
 6. `npm run build && npm run deploy -w @agent-tracker/worker`
-7. On each machine: `AGENTS_URL=https://… agents login` (or `--remote` over ssh). For MCP clients, add the server URL and sign in from the client.
+7. On each machine: `AGENTS_URL=https://… agnt-trkr login` (or `--remote` over ssh). For MCP clients, add the server URL and sign in from the client.
 
 ## Local development
 
@@ -76,7 +76,7 @@ cd worker && npx wrangler dev --port 8789 --env-file .dev.vars.auth --persist-to
 Here `.dev.vars.auth` holds `DEV_LOGIN=1`, `TRACKER_URL=http://127.0.0.1:8789`, `TRACKER_ALLOW={"emails":["you@example.com"]}` and `SESSION_SECRET=…`.
 
 **Tested this way:**
-- the remote CLI login (URL, then consent, then sign-in, then the pasted code), token refresh, and `agents whoami`;
+- the remote CLI login (URL, then consent, then sign-in, then the pasted code), token refresh, and `agnt-trkr whoami`;
 - web sign-in, with a non-allowlisted email refused; session cookie HttpOnly and SameSite=Lax; logout;
 - MCP OAuth (challenge, discovery, DCR, PKCE, then `tools/list`);
 - tokens are audience-bound: an `/api` token is refused at `/mcp` and vice versa;

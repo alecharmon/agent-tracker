@@ -261,7 +261,7 @@ export async function authRoutes(req: Request, env: AuthEnv, ctx: ExecutionConte
   if (path === "/oauth/cli") {
     const code = url.searchParams.get("code");
     if (!code) return html(`<h1>Sign-in didn't finish</h1><p>${esc(url.searchParams.get("error") ?? "No code returned.")}</p>`, 400);
-    return html(`<h1>Signed in</h1><p>Paste this code into the terminal where you ran <b>agents login</b>:</p><p><code>${esc(code)}</code></p>`);
+    return html(`<h1>Signed in</h1><p>Paste this code into the terminal where you ran <b>agnt-trkr login</b>:</p><p><code>${esc(code)}</code></p>`);
   }
 
   // Web dashboard: same upstream sign-in, ending in a session cookie.

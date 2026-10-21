@@ -4,7 +4,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "agents hook devin session-start",
+          "command": "agnt-trkr hook devin session-start",
           "timeout": 10
         }
       ]
@@ -15,7 +15,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "agents hook devin prompt",
+          "command": "agnt-trkr hook devin prompt",
           "timeout": 10
         }
       ]
@@ -26,7 +26,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "agents hook devin stop",
+          "command": "agnt-trkr hook devin stop",
           "timeout": 3600,
           "statusMessage": "Waiting for the captain's answer on the agent tracker"
         }
@@ -38,7 +38,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "agents hook devin session-end",
+          "command": "agnt-trkr hook devin session-end",
           "timeout": 5
         }
       ]

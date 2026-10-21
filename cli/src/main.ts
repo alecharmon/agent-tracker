@@ -8,20 +8,20 @@ import { accessToken, login, logout, signedInAs } from "./auth.ts";
 import { hook } from "./hook.ts";
 import { task, TASK_USAGE } from "./task.ts";
 
-const USAGE = `agents — track agent work
+const USAGE = `agnt-trkr — track agent work
 
-  agents ls [--state s] [--agent a] [--source s] [--home h] [--repo r] [-q text] [--all]
-  agents show <id>          item detail, events and PRs (full id or native id)
-  agents decisions          what needs me
-  agents prs                PRs seen in status lines
-  agents timeline [--minutes 30]
-  agents summary
-  agents login [--remote]   sign in (Cloudflare Access via the tracker); --remote prints a URL + code prompt
-  agents logout | whoami    forget the stored sign-in / show who you are
-  agents token              print a fresh access token (for plugins and scripts)
-  agents seed               load the stub fleet into the backend (local dev)
-  agents task …             for agents: start | update | ask | answers | done | fail (agents task help)
-  agents hook <claude-code|codex|devin> <session-start|prompt|stop|session-end>   harness hook handler (stdin: hook JSON)
+  agnt-trkr ls [--state s] [--agent a] [--source s] [--home h] [--repo r] [-q text] [--all]
+  agnt-trkr show <id>          item detail, events and PRs (full id or native id)
+  agnt-trkr decisions          what needs me
+  agnt-trkr prs                PRs seen in status lines
+  agnt-trkr timeline [--minutes 30]
+  agnt-trkr summary
+  agnt-trkr login [--remote]   sign in (Cloudflare Access via the tracker); --remote prints a URL + code prompt
+  agnt-trkr logout | whoami    forget the stored sign-in / show who you are
+  agnt-trkr token              print a fresh access token (for plugins and scripts)
+  agnt-trkr seed               load the stub fleet into the backend (local dev)
+  agnt-trkr task …             for agents: start | update | ask | answers | done | fail (agnt-trkr task help)
+  agnt-trkr hook <claude-code|codex|devin> <session-start|prompt|stop|session-end>   harness hook handler (stdin: hook JSON)
 
   --json    raw JSON output
   env: AGENTS_URL (default http://localhost:8787), AGENTS_TOKEN
@@ -52,7 +52,7 @@ async function call(path: string, init: RequestInit = {}, retried = false): Prom
     throw new Error(`cannot reach ${url} (${e.cause?.code ?? e.message}). Is \`npm run dev -w @agent-tracker/worker\` running?`);
   });
   if (res.status === 401 && !retried && signedInAs(url)) return call(path, init, true); // refresh once
-  if (res.status === 401) throw new Error(`not signed in to ${url}: run \`agents login\`${process.env.SSH_CONNECTION ? " (or agents login --remote)" : ""}`);
+  if (res.status === 401) throw new Error(`not signed in to ${url}: run \`agnt-trkr login\`${process.env.SSH_CONNECTION ? " (or agnt-trkr login --remote)" : ""}`);
   const body: any = await res.json();
   if (!res.ok) throw new Error(`${res.status} ${body.error ?? ""}${body.matches ? ": " + body.matches.join(", ") : ""}`);
   return body;
@@ -93,7 +93,7 @@ async function main(argv: string[]) {
       json: { type: "boolean" }, all: { type: "boolean" }, help: { type: "boolean", short: "h" },
       state: { type: "string" }, agent: { type: "string" }, source: { type: "string" }, home: { type: "string" },
       repo: { type: "string" }, q: { type: "string", short: "q" }, minutes: { type: "string" },
-      // agents task
+      // agnt-trkr task
       detail: { type: "string" }, model: { type: "string" }, key: { type: "string" }, parent: { type: "string" }, url: { type: "string" }, task: { type: "string" },
       wait: { type: "string" }, harness: { type: "string" }, session: { type: "string" }, "ask-json": { type: "string" },
       question: { type: "string", multiple: true }, option: { type: "string", short: "o", multiple: true },
@@ -117,7 +117,7 @@ async function main(argv: string[]) {
       return out(items, () => table(items));
     }
     case "show": {
-      if (!rest[0]) throw new Error("usage: agents show <id>");
+      if (!rest[0]) throw new Error("usage: agnt-trkr show <id>");
       const r = await call(`/api/items/${encodeURIComponent(rest[0])}`);
       return out(r, () => {
         const i: Item = r.item;
@@ -167,7 +167,7 @@ async function main(argv: string[]) {
     }
     case "token": {
       const t = await bearer(config().url);
-      if (!t) throw new Error("not signed in: run `agents login`");
+      if (!t) throw new Error("not signed in: run `agnt-trkr login`");
       return console.log(t);
     }
     case "hook":

@@ -1,8 +1,8 @@
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "agents hook codex session-start", "timeout": 10 }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "agents hook codex prompt", "timeout": 10 }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "agents hook codex stop", "timeout": 3600, "statusMessage": "Waiting for the captain's answer on the agent tracker" }] }],
-    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "agents hook codex session-end", "timeout": 5 }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook codex session-start", "timeout": 10 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook codex prompt", "timeout": 10 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook codex stop", "timeout": 3600, "statusMessage": "Waiting for the captain's answer on the agent tracker" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "agnt-trkr hook codex session-end", "timeout": 5 }] }]
   }
 }

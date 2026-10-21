@@ -7,15 +7,15 @@ description: Agent tracker — report your task to the captain's dashboard. Use 
 
 The captain tracks **tasks**, not agents. A task can pass through several agents (planner, crewmate, reviewer), and each one joins it as a session. Your job: keep your task accurate as you work. It starts, reports **milestones**, asks for **decisions**, and ends.
 
-Two interfaces, same five operations. Use the `agent-tracker` MCP tools when your harness has them. Otherwise use the `agents task` CLI, which remembers your task id. Each tool's schema and `agents task help` list the parameters.
+Two interfaces, same five operations. Use the `agent-tracker` MCP tools when your harness has them. Otherwise use the `agnt-trkr task` CLI, which remembers your task id. Each tool's schema and `agnt-trkr task help` list the parameters.
 
 | Operation | MCP | CLI |
 |---|---|---|
-| start | `task_start` | `agents task start "<title>"` |
-| milestone | `task_update` | `agents task update "<text>"` |
-| decision | `task_ask`, then `task_answers` | `agents task ask …`, then `agents task answers` |
-| PR status | `task_pr` (`open`, `ci_running`, `ci_passed`, `ci_failed`, `merged`, `closed`) | `agents task pr <url> --status <status>` |
-| end | `task_done` (`review`, `done` or `failed`) | `agents task review "<text>" --url <pr>` / `agents task done "<result>"` / `agents task fail "<why>"` |
+| start | `task_start` | `agnt-trkr task start "<title>"` |
+| milestone | `task_update` | `agnt-trkr task update "<text>"` |
+| decision | `task_ask`, then `task_answers` | `agnt-trkr task ask …`, then `agnt-trkr task answers` |
+| PR status | `task_pr` (`open`, `ci_running`, `ci_passed`, `ci_failed`, `merged`, `closed`) | `agnt-trkr task pr <url> --status <status>` |
+| end | `task_done` (`review`, `done` or `failed`) | `agnt-trkr task review "<text>" --url <pr>` / `agnt-trkr task done "<result>"` / `agnt-trkr task fail "<why>"` |
 
 ## Steps
 

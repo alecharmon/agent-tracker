@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 type Call = (path: string, init?: RequestInit) => Promise<any>;
 
-// `agents hook <claude-code|codex> <event>`: hook handlers. Hook JSON arrives on stdin.
+// `agnt-trkr hook <claude-code|codex> <event>`: hook handlers. Hook JSON arrives on stdin.
 // Claude Code's Stop hook runs in the background (asyncRewake: exit 2 wakes the idle session);
 // Codex and Devin have no rewake, so their Stop hook holds the turn and continues it with {"decision":"block","reason":answer}.
 // Hooks only ever track; they never block the agent's real work, so every failure exits 0 quietly.
@@ -93,7 +93,7 @@ const HOOKED = ["claude-code", "codex", "devin"];
 const HELD = ["codex", "devin"];
 
 export async function hook(call: Call, harness: string, event: string) {
-  if (!HOOKED.includes(harness)) throw new Error(`agents hook supports ${HOOKED.join(", ")}; Pi uses integrations/pi`);
+  if (!HOOKED.includes(harness)) throw new Error(`agnt-trkr hook supports ${HOOKED.join(", ")}; Pi uses integrations/pi`);
   const input = stdinJson();
   const sid: string | undefined = input.session_id;
   if (!sid) return;
@@ -106,7 +106,7 @@ export async function hook(call: Call, harness: string, event: string) {
 
   switch (event) {
     case "session-start": {
-      // Later Bash commands inherit these, so `agents task …` links to this session.
+      // Later Bash commands inherit these, so `agnt-trkr task …` links to this session.
       if (process.env.CLAUDE_ENV_FILE)
         appendFileSync(process.env.CLAUDE_ENV_FILE, `export AGENTS_HARNESS=${harness}\nexport AGENTS_SESSION=${JSON.stringify(sid)}\n`);
       let current: any = null;
