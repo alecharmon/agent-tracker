@@ -282,18 +282,18 @@ export async function taskFinish(db: Db, idOrNative: string, f: { outcome: "done
   return withInbox({ task_id: idOrNative, state }, inbox);
 }
 
-export async function captainMessage(db: Db, idOrNative: string, text: unknown, now = new Date().toISOString()) {
+export async function captainMessage(db: Db, idOrNative: string, text: unknown, now = new Date().toISOString(), by: string | null = null) {
   check(str(text, 4000), "message text is required (max 4000 chars)");
   const item = (await peekTask(db, idOrNative)).item;
   await db.batch([
-    { sql: `INSERT INTO messages (item_id, at, text) VALUES (?,?,?)`, params: [item.id, now, (text as string).trim()] },
+    { sql: `INSERT INTO messages (item_id, at, text, by) VALUES (?,?,?,?)`, params: [item.id, now, (text as string).trim(), by] },
     ...eventStmts(item.id, now, "MESSAGE", (text as string).trim()),
   ]);
   return { task_id: item.id, queued: true };
 }
 
 /** Captain moves a task along: the PR merged (agent validates next), validated (done), or closed unmerged. */
-export async function captainStage(db: Db, idOrNative: string, stage: unknown, now = new Date().toISOString()) {
+export async function captainStage(db: Db, idOrNative: string, stage: unknown, now = new Date().toISOString(), by: string | null = null) {
   check(["merged", "validated", "closed"].includes(stage as string), "stage must be merged, validated or closed");
   const item = (await peekTask(db, idOrNative)).item;
   const to = { merged: "validating", validated: "landed", closed: "failed" }[stage as "merged" | "validated" | "closed"];
@@ -301,7 +301,7 @@ export async function captainStage(db: Db, idOrNative: string, stage: unknown, n
   const detail = { merged: "Merged; validating", validated: "Validated by the captain", closed: "PR closed without merging" }[stage as "merged" | "validated" | "closed"];
   const stmts: Stmt[] = [
     { sql: `UPDATE items SET state = ?, detail = ?, updated_at = ?, last_seen = ? WHERE id = ?`, params: [to, detail, now, now, item.id] },
-    ...eventStmts(item.id, now, verb, detail),
+    ...eventStmts(item.id, now, verb, by ? `${detail} (${by})` : detail),
   ];
   // The captain's call covers every PR still in flight on the task.
   if (stage !== "validated")

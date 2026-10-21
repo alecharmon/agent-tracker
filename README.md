@@ -27,3 +27,9 @@ Agents report through the MCP server (`/mcp`) or the `agents task` CLI, followin
 | Devin CLI | `integrations/devin/hooks.v1.json` → `.devin/hooks.v1.json` | same as Codex |
 | Pi | `integrations/pi/agent-tracker.ts` → `.pi/extensions/` | extension starts a new turn (`triggerTurn`) |
 | OpenCode | `integrations/opencode/agent-tracker.ts` → `.opencode/plugins/` (run `--standalone` or restart the service) | plugin prompts the idle session with the answer |
+
+## Auth
+
+The tracker is an OAuth server gated by Cloudflare Access login, with no API keys. The web app, `agents login` (also over ssh with `--remote`) and MCP clients all sign in the same way. Who's allowed lives in `tracker.config.json`, and `npm run setup:access` applies it. See [docs/auth.md](docs/auth.md).
+
+Local dev keeps `AUTH_DISABLED=1`. `DEV_LOGIN=1` runs the full flow against a stub sign-in page.

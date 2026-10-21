@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs, styleText } from "node:util";
 import { type Item, stubPayloads } from "@agent-tracker/core";
+import { accessToken, login, logout, signedInAs } from "./auth.ts";
 import { hook } from "./hook.ts";
 import { task, TASK_USAGE } from "./task.ts";
 
@@ -15,6 +16,9 @@ const USAGE = `agents — track agent work
   agents prs                PRs seen in status lines
   agents timeline [--minutes 30]
   agents summary
+  agents login [--remote]   sign in (Cloudflare Access via the tracker); --remote prints a URL + code prompt
+  agents logout | whoami    forget the stored sign-in / show who you are
+  agents token              print a fresh access token (for plugins and scripts)
   agents seed               load the stub fleet into the backend (local dev)
   agents task …             for agents: start | update | ask | answers | done | fail (agents task help)
   agents hook <claude-code|codex|devin> <session-start|prompt|stop|session-end>   harness hook handler (stdin: hook JSON)
@@ -29,22 +33,26 @@ function config() {
     file = JSON.parse(readFileSync(join(homedir(), ".config/agent-tracker/config.json"), "utf8"));
   } catch {}
   const url = (process.env.AGENTS_URL ?? file.url ?? "http://localhost:8787").replace(/\/$/, "");
-  // ponytail: the dev token only ever applies to a local wrangler dev server.
-  const local = /^http:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(url);
-  const token = process.env.AGENTS_TOKEN ?? file.token ?? (local ? "dev-token" : undefined);
-  return { url, token };
+  return { url, token: process.env.AGENTS_TOKEN ?? file.token };
 }
 
-async function call(path: string, init: RequestInit = {}) {
-  const { url, token } = config();
-  if (!token) throw new Error("no token: set AGENTS_TOKEN or ~/.config/agent-tracker/config.json");
+/** The stored OAuth sign-in for this tracker, an explicit AGENTS_TOKEN, or (local dev with auth off) none. */
+async function bearer(url: string, force = false) {
+  return (await accessToken(url, force).catch(() => null)) ?? config().token ?? null;
+}
+
+async function call(path: string, init: RequestInit = {}, retried = false): Promise<any> {
+  const { url } = config();
+  const token = await bearer(url, retried);
   const res = await fetch(url + path, {
     ...init,
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...init.headers },
+    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "application/json", ...init.headers },
   }).catch((e) => {
     if (e?.name === "TimeoutError" || e?.name === "AbortError") throw e;
     throw new Error(`cannot reach ${url} (${e.cause?.code ?? e.message}). Is \`npm run dev -w @agent-tracker/worker\` running?`);
   });
+  if (res.status === 401 && !retried && signedInAs(url)) return call(path, init, true); // refresh once
+  if (res.status === 401) throw new Error(`not signed in to ${url}: run \`agents login\`${process.env.SSH_CONNECTION ? " (or agents login --remote)" : ""}`);
   const body: any = await res.json();
   if (!res.ok) throw new Error(`${res.status} ${body.error ?? ""}${body.matches ? ": " + body.matches.join(", ") : ""}`);
   return body;
@@ -90,6 +98,7 @@ async function main(argv: string[]) {
       wait: { type: "string" }, harness: { type: "string" }, session: { type: "string" }, "ask-json": { type: "string" },
       question: { type: "string", multiple: true }, option: { type: "string", short: "o", multiple: true },
       "no-other": { type: "boolean" }, dispatch: { type: "boolean" }, status: { type: "string" }, note: { type: "string" },
+      remote: { type: "boolean" },
     },
   });
   if (o.help || cmd === "help") return console.log(USAGE);
@@ -144,6 +153,22 @@ async function main(argv: string[]) {
     case "seed": {
       const r = await call("/api/ingest", { method: "POST", body: JSON.stringify(stubPayloads()) });
       return out(r, () => r.results.forEach((x: any) => console.log(`seeded ${x.source}/${x.home}: ${x.items} items, ${x.events} events`)));
+    }
+    case "login": {
+      const { url } = config();
+      const c = await login(url, { remote: o.remote });
+      return console.log(`Signed in to ${url}${c.email ? ` as ${c.email}` : ""}.`);
+    }
+    case "logout":
+      return console.log(logout(config().url) ? "Signed out." : "Not signed in.");
+    case "whoami": {
+      const me = await call("/api/me");
+      return out(me, () => console.log(`${me.email}${me.auth === "disabled" ? " (auth disabled: local dev)" : ""} @ ${config().url}`));
+    }
+    case "token": {
+      const t = await bearer(config().url);
+      if (!t) throw new Error("not signed in: run `agents login`");
+      return console.log(t);
     }
     case "hook":
       return hook(call, rest[0], rest[1]);

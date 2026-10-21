@@ -31,6 +31,8 @@ export interface TrackerResponse extends ResponseIn {
   delivered_at: string | null;
   /** The agent's next tracker call after reading: proof it got it. Until then the item stays "answered". */
   acked_at: string | null;
+  /** Who answered (signed-in email); null with auth disabled. */
+  by: string | null;
 }
 
 export interface ItemIn {
@@ -151,4 +153,6 @@ export interface CaptainMessage {
   /** When an agent received it, and which session. Null while queued. */
   delivered_at: string | null;
   session_id: string | null;
+  /** Who sent it (signed-in email); null with auth disabled. */
+  by: string | null;
 }

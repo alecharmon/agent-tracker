@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@agent-tracker/core": "*"
+    "@agent-tracker/core": "*",
+    "@cloudflare/workers-oauth-provider": "^1.2.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",

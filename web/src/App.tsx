@@ -2,7 +2,7 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { type Item, getToken, setToken, Unauthorized, usePoll } from "@/lib/api"
+import { type Item, Unauthorized, usePoll } from "@/lib/api"
 import { ViewToolbar } from "@/components/view-toolbar"
 import { apply, DEFAULT_OPTIONS, type ViewOptions } from "@/lib/view-options"
 import { TaskModal } from "@/views/AskSheet"
@@ -14,7 +14,6 @@ const readView = (): View => (location.hash === "#lanes" ? "lanes" : "inbox")
 
 export default function App() {
   const [view, setView] = React.useState<View>(readView)
-  const [authed, setAuthed] = React.useState(!!getToken())
   // The open task and the list it was opened from (j/k step through it). Resolved against live data.
   const [opened, setOpened] = React.useState<{ id: string; ids: string[] } | null>(null)
   const open = (i: Item, siblings: Item[]) => setOpened({ id: i.id, ids: siblings.map((s) => s.id) })
@@ -39,14 +38,13 @@ export default function App() {
     return () => removeEventListener("keydown", onKey)
   }, [])
 
-  const items = usePoll<Item[]>(authed ? "/api/items" : null, 10_000)
+  const items = usePoll<Item[]>("/api/items", 10_000)
   React.useEffect(() => setMoved({}), [items.data])
   const all = React.useMemo(() => (items.data ?? []).map((i) => (moved[i.id] ? { ...i, state: moved[i.id] as Item["state"] } : i)), [items.data, moved])
   const byId = new Map(all.map((i) => [i.id, i]))
   const current = opened ? byId.get(opened.id) ?? null : null
   const siblings = opened ? opened.ids.map((id) => byId.get(id)).filter((i): i is Item => !!i) : []
-  if (items.error instanceof Unauthorized || !authed)
-    return <TokenForm onSave={(t) => (setToken(t), setAuthed(true), location.reload())} />
+  if (items.error instanceof Unauthorized && !items.data) return <SignIn />
 
   return (
     <TooltipProvider delay={120}>
@@ -74,16 +72,13 @@ export default function App() {
   )
 }
 
-function TokenForm({ onSave }: { onSave: (t: string) => void }) {
-  const [t, setT] = React.useState("")
+function SignIn() {
+  const next = encodeURIComponent(location.pathname + location.hash)
   return (
-    <form className="mx-auto mt-24 flex max-w-sm flex-col gap-3 px-4" onSubmit={(e) => (e.preventDefault(), t.trim() && onSave(t.trim()))}>
+    <main className="mx-auto mt-24 flex max-w-sm flex-col gap-3 px-4">
       <h1 className="text-lg font-semibold">Agent tracker</h1>
-      <label className="flex flex-col gap-1.5 text-sm">
-        API token
-        <input type="password" autoComplete="current-password" className="rounded-md border bg-transparent px-3 py-2" value={t} onChange={(e) => setT(e.target.value)} />
-      </label>
-      <Button type="submit">Save</Button>
-    </form>
+      <p className="text-sm text-muted-foreground">Sign in with your Cloudflare Access login to see your agents' work.</p>
+      <Button render={<a href={`/login?next=${next}`} />} nativeButton={false}>Sign in</Button>
+    </main>
   )
 }

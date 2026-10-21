@@ -52,6 +52,8 @@ const ADDED: [table: string, column: string, type: string][] = [
   ["sessions", "external_id", "TEXT"],
   ["prs", "status", "TEXT"],
   ["prs", "note", "TEXT"],
+  ["responses", "by", "TEXT"],
+  ["messages", "by", "TEXT"],
 ];
 
 export async function migrate(db: Db) {
@@ -272,15 +274,15 @@ export function validateResponse(r: any, item: Item): asserts r is ResponseIn {
  * Record the captain's answer (or a retry). The item becomes "answered" until the agent reads it
  * (taskAnswer), which acknowledges it and moves the item back to running.
  */
-export async function respond(db: Db, idOrNative: string, r: unknown, now = new Date().toISOString()) {
+export async function respond(db: Db, idOrNative: string, r: unknown, now = new Date().toISOString(), by: string | null = null) {
   const found = await getItem(db, idOrNative);
   if (!found || "ambiguous" in found) return null;
   const item = found.item;
   validateResponse(r, item);
   const summary = r.action === "retry" ? "retry requested" : describe(item, r);
   await db.batch([
-    { sql: `INSERT INTO responses (item_id, at, action, answers, feedback) VALUES (?,?,?,?,?)`,
-      params: [item.id, now, r.action, r.answers ? JSON.stringify(r.answers) : null, r.feedback?.trim() || null] },
+    { sql: `INSERT INTO responses (item_id, at, action, answers, feedback, by) VALUES (?,?,?,?,?,?)`,
+      params: [item.id, now, r.action, r.answers ? JSON.stringify(r.answers) : null, r.feedback?.trim() || null, by] },
     { sql: `UPDATE items SET state = 'answered', updated_at = ?, detail = ? WHERE id = ?`, params: [now, `RESPONDED: ${summary}`, item.id] },
     { sql: `INSERT OR IGNORE INTO events (id, item_id, ts, verb, text) VALUES (?,?,?,?,?)`,
       params: [hash(`${item.id}|${now}|response`), item.id, now, r.action === "retry" ? "RETRY" : "RESPONDED", summary] },

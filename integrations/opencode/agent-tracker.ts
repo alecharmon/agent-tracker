@@ -1,19 +1,37 @@
 import { Plugin } from "@opencode/plugin"
+import { execFile } from "node:child_process"
 import { appendFileSync } from "node:fs"
 
 // agent-tracker for OpenCode (v2 plugin API): liveness from session status, and wake-on-answer.
 // After each turn, watch for the captain's answer or follow-up messages, and prompt the session with them.
 
 const BASE = (process.env.AGENTS_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "")
-const TOKEN = process.env.AGENTS_TOKEN ?? (/^http:\/\/(localhost|127\.0\.0\.1)/.test(BASE) ? "dev-token" : "")
+// Token: AGENTS_TOKEN, else the CLI's stored sign-in (`agents token`, refreshed as needed)
+// with auth disabled locally neither is needed.
+let cached: { token: string; at: number } | null = null
+function token(): Promise<string> {
+  if (process.env.AGENTS_TOKEN) return Promise.resolve(process.env.AGENTS_TOKEN)
+  if (cached && Date.now() - cached.at < 5 * 60_000) return Promise.resolve(cached.token)
+  return new Promise((resolve) =>
+    execFile("agents", ["token"], { timeout: 15_000 }, (err, out) => {
+      cached = err ? null : { token: out.trim(), at: Date.now() }
+      resolve(cached?.token ?? "")
+    }),
+  )
+}
 const DEBUG = process.env.AGENTS_DEBUG_LOG
 const enc = encodeURIComponent
 const log = (...a: unknown[]) => DEBUG && appendFileSync(DEBUG, a.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ") + "\n")
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const t = await token()
+  return t ? { authorization: `Bearer ${t}`, "content-type": "application/json" } : { "content-type": "application/json" }
+}
+
 async function call(path: string, init: RequestInit = {}): Promise<any> {
   const res = await fetch(BASE + path, {
     ...init,
-    headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+    headers: await authHeaders(),
     signal: init.signal ?? AbortSignal.timeout(60_000),
   })
   if (!res.ok) throw new Error(`${res.status}`)

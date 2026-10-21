@@ -8,9 +8,14 @@
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/mcp"]
+    "run_worker_first": ["/api/*", "/mcp", "/authorize", "/register", "/login", "/login/*", "/logout", "/oauth/*", "/.well-known/*"]
   },
   "durable_objects": { "bindings": [{ "name": "TRACKER", "class_name": "Tracker" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Tracker"] }]
-  // Secrets: TRACKER_TOKEN (required).
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Tracker"] }],
+  // OAuth grants and tokens (workers-oauth-provider). `npm run setup:access` creates the real namespace.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "local-oauth-kv" }],
+  // Canonical origin: OAuth issuer and resource base. Set per deployment.
+  "vars": { "TRACKER_URL": "http://127.0.0.1:8787" }
+  // Secrets: SESSION_SECRET, TRACKER_ALLOW (JSON allowlist), ACCESS_CLIENT_ID/SECRET, ACCESS_AUTHORIZATION_URL,
+  // ACCESS_TOKEN_URL, ACCESS_JWKS_URL. See docs/auth.md; `npm run setup:access` prints them.
 }

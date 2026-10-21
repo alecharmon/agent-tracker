@@ -64,9 +64,10 @@ export async function api(db: Db, req: Request): Promise<Response> {
     if (req.method === "POST" && captain) {
       const id = decodeURIComponent(captain[1]);
       const body: any = await req.json();
-      if (captain[2] === "message") return json(await captainMessage(db, id, body?.text));
-      if (captain[2] === "stage") return json(await captainStage(db, id, body?.stage));
-      const r = await respond(db, id, body);
+      const by = req.headers.get("x-tracker-user"); // set by the Worker from the signed-in user
+      if (captain[2] === "message") return json(await captainMessage(db, id, body?.text, undefined, by));
+      if (captain[2] === "stage") return json(await captainStage(db, id, body?.stage, undefined, by));
+      const r = await respond(db, id, body, undefined, by);
       return r ? json(r) : json({ error: "not found" }, 404);
     }
     if (req.method !== "GET") return json({ error: "method not allowed" }, 405);

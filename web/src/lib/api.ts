@@ -4,29 +4,14 @@ import * as React from "react"
 export type { Ask, Item, Pr, ResponseIn, Session, TrackerEvent, TrackerResponse }
 export type ItemDetail = { item: Item; events: TrackerEvent[]; prs: Pr[]; responses: TrackerResponse[]; sessions: Session[]; messages: CaptainMessage[] }
 
-const KEY = "agents-token"
-const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname)
-
-export function getToken(): string | null {
-  try {
-    return localStorage.getItem(KEY) ?? (isLocal ? "dev-token" : null)
-  } catch {
-    return isLocal ? "dev-token" : null
-  }
-}
-export function setToken(t: string | null) {
-  try {
-    if (t) localStorage.setItem(KEY, t)
-    else localStorage.removeItem(KEY)
-  } catch {}
-}
-
+// The dashboard signs in with a session cookie (/login, Cloudflare Access); nothing to store client-side.
 export class Unauthorized extends Error {}
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { authorization: `Bearer ${getToken() ?? ""}`, "content-type": "application/json" },
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (res.status === 401) throw new Unauthorized("unauthorized")

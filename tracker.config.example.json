@@ -1,0 +1,12 @@
+{
+  "url": "https://agents.example.com",
+  "account_id": "<cloudflare account id>",
+  "access": {
+    "allow": {
+      "emails": ["you@example.com"],
+      "email_domains": [],
+      "github_orgs": []
+    },
+    "login_methods": ["onetimepin", "github"]
+  }
+}
