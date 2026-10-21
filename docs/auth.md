@@ -45,7 +45,7 @@
 
 Each person runs their own tracker from the same code, with their own config. `allow` is usually just you, plus anyone you invite.
 
-`npm run setup:access` applies this config through the Cloudflare API. It needs `CLOUDFLARE_API_TOKEN` with the Access: Apps and Policies Edit permission. The script:
+`npm run setup:access` applies this config with the `cf` CLI (Cloudflare's own login: `cf auth create <name>`; no API token). The script:
 - creates or updates the Access for SaaS (OIDC) app, with the tracker's `/oauth/callback` as redirect URI and 90-day refresh tokens;
 - creates or updates its allow policy;
 - prints the `wrangler secret put` commands for `ACCESS_CLIENT_ID` / `ACCESS_CLIENT_SECRET`.
@@ -58,7 +58,7 @@ Each person runs their own tracker from the same code, with their own config. `a
 2. Create the KV namespace with `npx wrangler kv namespace create OAUTH_KV`, and put its id in `worker/wrangler.jsonc`.
 3. Set `vars.TRACKER_URL` in `worker/wrangler.jsonc` to the deployed origin.
 4. Copy `tracker.config.example.json` → `tracker.config.json` (gitignored) and fill it in.
-5. `CLOUDFLARE_API_TOKEN=… npm run setup:access -- --write-secrets`
+5. `npm run setup:access -- --dry-run`, then `npm run setup:access -- --write-secrets` (signed in with `cf auth create`)
 6. `npm run build && npm run deploy -w @agent-tracker/worker`
 7. On each machine: `AGENTS_URL=https://… agents login` (or `--remote` over ssh). For MCP clients, add the server URL and sign in from the client.
 
