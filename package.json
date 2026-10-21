@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "npm run dev -w @agent-tracker/worker",
     "build": "npm run build -w @agent-tracker/web",
-    "test": "npm test -w @agent-tracker/core",
+    "test": "npm test -w @agent-tracker/core && npm test -w @agent-tracker/cli",
     "seed": "node --no-warnings cli/src/main.ts seed"
   }
 }

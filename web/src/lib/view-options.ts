@@ -3,7 +3,7 @@ import { harnessLabel, type Item } from "@/lib/api"
 export const STATUS = [
   { key: "all", label: "All", states: null },
   { key: "needs", label: "Needs you", states: ["needs_me", "failed"] },
-  { key: "live", label: "Running", states: ["underway", "answered"] },
+  { key: "live", label: "Running", states: ["underway", "answered", "idle"] },
   { key: "done", label: "Done", states: ["landed"] },
 ] as const
 export type StatusKey = (typeof STATUS)[number]["key"]

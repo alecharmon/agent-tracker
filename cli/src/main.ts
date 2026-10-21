@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs, styleText } from "node:util";
 import { type Item, stubPayloads } from "@agent-tracker/core";
+import { hook } from "./hook.ts";
 import { task, TASK_USAGE } from "./task.ts";
 
 const USAGE = `agents — track agent work
@@ -16,6 +17,7 @@ const USAGE = `agents — track agent work
   agents summary
   agents seed               load the stub fleet into the backend (local dev)
   agents task …             for agents: start | update | ask | answers | done | fail (agents task help)
+  agents hook <claude-code|codex|devin> <session-start|prompt|stop|session-end>   harness hook handler (stdin: hook JSON)
 
   --json    raw JSON output
   env: AGENTS_URL (default http://localhost:8787), AGENTS_TOKEN
@@ -143,6 +145,8 @@ async function main(argv: string[]) {
       const r = await call("/api/ingest", { method: "POST", body: JSON.stringify(stubPayloads()) });
       return out(r, () => r.results.forEach((x: any) => console.log(`seeded ${x.source}/${x.home}: ${x.items} items, ${x.events} events`)));
     }
+    case "hook":
+      return hook(call, rest[0], rest[1]);
     case "task":
       if (!rest.length || rest[0] === "help") return console.log(TASK_USAGE);
       // Agents read JSON best; -q/-o order matters, so the raw argv is passed through.

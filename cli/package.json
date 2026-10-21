@@ -2,6 +2,13 @@
   "name": "@agent-tracker/cli",
   "private": true,
   "type": "module",
-  "bin": { "agents": "src/main.ts" },
-  "dependencies": { "@agent-tracker/core": "*" }
+  "bin": {
+    "agents": "src/main.ts"
+  },
+  "dependencies": {
+    "@agent-tracker/core": "*"
+  },
+  "scripts": {
+    "test": "node --test --no-warnings src/*.test.ts"
+  }
 }

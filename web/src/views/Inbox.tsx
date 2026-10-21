@@ -11,7 +11,7 @@ import { ProviderMark, StateIcon, tone } from "./states"
 
 const COLUMNS = [
   { key: "needs", title: "Needs you", states: ["needs_me", "failed"], dot: "text-amber-500" },
-  { key: "running", title: "Running", states: ["answered", "underway"], dot: "text-blue-500" },
+  { key: "running", title: "Running", states: ["answered", "underway", "idle"], dot: "text-blue-500" },
   { key: "done", title: "Done", states: ["landed"], dot: "text-emerald-500" },
 ]
 const spring = { type: "spring", stiffness: 380, damping: 34, mass: 0.9 } as const
@@ -147,6 +147,7 @@ function Status({ item: i, now }: { item: Item; now: number }) {
     i.state === "failed" ? "Failed"
     : i.state === "needs_me" ? `Waiting ${duration(i.updated_at ?? i.last_seen, now)}`
     : i.state === "answered" ? `Answered · unread ${duration(i.updated_at ?? i.last_seen, now)}`
+    : i.state === "idle" ? `Idle · ${ago(i.last_seen, now)}`
     : duration(i.started_at ?? i.first_seen, endOf(i, now)) || STATE_LABEL[i.state]
   return (
     <span className={cn("flex min-w-0 items-center gap-1.5 font-medium tabular-nums", t.text)}>
