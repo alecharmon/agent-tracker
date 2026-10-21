@@ -1,61 +1,61 @@
 ---
 name: agent-tracker
-description: Agent tracker — report your task to the captain's dashboard. Use when starting multi-step work, when a decision is the captain's to make, and when the work ends.
+description: Report your task to the captain's tracker. Use when you start multi-step work, when a decision is the captain's call, when you dispatch another agent, and when your work ends.
 ---
 
 # Agent tracker
 
-The captain tracks **tasks**, not agents. A task can pass through several agents (planner, crewmate, reviewer), and each one joins it as a session. Your job: keep your task accurate as you work. It starts, reports **milestones**, asks for **decisions**, and ends.
+The captain follows **tasks**, not agents, and reads them from a phone. Your job is to keep your task's record true: one start, a milestone per result, the captain's calls asked, one finish.
 
-Two interfaces, same five operations. Use the `agent-tracker` MCP tools when your harness has them. Otherwise use the `agnt-trkr task` CLI, which remembers your task id. Each tool's schema and `agnt-trkr task help` list the parameters.
+Use the `agent-tracker` MCP tools when you have them; otherwise the `agents task` CLI, which remembers your task (`agents task help` lists its flags).
 
-| Operation | MCP | CLI |
+| | MCP | CLI |
 |---|---|---|
-| start | `task_start` | `agnt-trkr task start "<title>"` |
-| milestone | `task_update` | `agnt-trkr task update "<text>"` |
-| decision | `task_ask`, then `task_answers` | `agnt-trkr task ask …`, then `agnt-trkr task answers` |
-| PR status | `task_pr` (`open`, `ci_running`, `ci_passed`, `ci_failed`, `merged`, `closed`) | `agnt-trkr task pr <url> --status <status>` |
-| end | `task_done` (`review`, `done` or `failed`) | `agnt-trkr task review "<text>" --url <pr>` / `agnt-trkr task done "<result>"` / `agnt-trkr task fail "<why>"` |
+| start | `task_start` | `agents task start` |
+| milestone | `task_update` | `agents task update` |
+| ask | `task_ask`, then `task_answers` | `agents task ask`, then `agents task answers` |
+| PR status | `task_pr` | `agents task pr` |
+| finish | `task_done` | `agents task review` / `done` / `fail` |
 
 ## Steps
 
-1. **Start.** Before your first real step, call start once.
-   - Give it a short imperative title, e.g. "Fix flaky login test".
-   - Include `repo` (the working-directory basename), `machine` (`hostname -s`) and your model.
-   - **Joining existing work:** if you were handed a task key (in your prompt, or `$AGENTS_TASK_KEY`), pass it as `key`. That joins the task instead of creating a new one.
-   - Done when you hold a `task_id`, or the CLI has printed one. Pass it to every later MCP call exactly as returned.
+1. **Start**, once, before your first real step.
+   - Title: a short imperative, e.g. "Fix flaky login test".
+   - Pass `repo` (the working-directory basename), `machine` (`hostname -s`) and `model` (your model name). Pass `session` when your harness gave you a session id. The CLI fills repo and machine itself; give it `--model`.
+   - Handed a task key, in your prompt or as `$AGENTS_TASK_KEY`? Pass it as `key`: you join that task.
+   - Done when you hold a `task_id` from a start that carried repo, machine and model. Pass that `task_id` unchanged to every later MCP call, for the rest of the session, including after you finish. The CLI remembers it: later commands need no `--task`.
 
-2. **Work, reporting milestones.** A milestone is a result the captain would want to read: a cause found, a fix in, tests green, a PR opened.
-   - Write it as one line in the past tense, and attach any PR, issue or deploy link.
-   - Done when every milestone has its line.
+2. **Milestone** each result the captain would want to read: cause found, fix committed, tests green, PR opened, deploy run.
+   - One line, past tense, with its link when there is one.
+   - Done when every result has its line.
 
-3. **Escalate decisions.** A decision is the next step whenever it is irreversible, costly, or a choice between real tradeoffs, or when it reaches past what you were asked to do. Facts you can find by reading or running things are yours to settle.
-   - **Supervised** (an agent dispatched you, e.g. a first mate): escalate to that agent the way it told you to. It owns asking the captain.
-   - **Top-level:** ask the captain. Read [ASKING.md](ASKING.md) and follow it.
-   - Done when you hold an `answered` result and have acted on exactly what it says.
+3. **Ask** when the next step is the captain's call: irreversible, costly, a real tradeoff, or beyond what you were asked. Facts you can find by reading or running things are yours to settle.
+   - **Top-level:** ask the captain. Follow [ASKING.md](ASKING.md): it covers writing the ask, waiting, and acting on the answer.
+   - **Supervised** (another agent dispatched you): raise it with that agent the way it told you to; it owns asking the captain.
+   - Done when the answer is in and you've done exactly what it says.
 
-4. **Hand off or end.** **Done means merged and validated.**
-   - **PRs:** report each PR's status every time it changes (opened, CI running, CI failed or passed, merged, closed). A task can have several PRs.
-   - **`review`** when your PRs are up: what's in them, plus the `url`. Merging is the captain's call (or your dispatcher's).
-   - **After every PR has merged,** the reply (or a captain message) tells you to validate. Check the change works where it shipped (tests on main, the deploy, the behaviour), then send **`done`** with what you checked.
-   - **`done` directly** when there's no PR and you verified the result, e.g. a report delivered or a decision carried out.
-   - **`failed`** with the reason and what remains.
+4. **Finish**, once per piece of work. **Done means merged and validated.**
+   - **Opened a PR:** follow [SHIPPING.md](SHIPPING.md) before your next tracker call. It takes you through PR status, `review`, and validating after the merge.
+   - **No PR:** `done`, with what you verified, e.g. "Deployed canary a1b2c3d; tests pass".
+   - **Couldn't do it:** `failed`, with why and what remains.
    - Done when the call returns `review`, `landed` or `failed`.
 
-## Follow-ups from the captain
+## Captain messages
 
-Any tracker response can carry **`captain_messages`**, or your harness can wake you with one. That can happen in any state, including after you finished. They're the captain's follow-ups and new direction: act on them, report milestones as usual, and finish again when the follow-up is complete.
+Any tracker response can carry `captain_messages`, in any state, including after you finished. They are the captain's follow-ups: new instructions. Carry them out with milestones as usual, then finish again.
 
-## Dispatching other agents
+Told the captain has news, with no message in front of you? Make a tracker call to receive it: a `task_update` saying what you're picking up.
 
-When you hand work to another agent:
-- create the sub-task with `dispatch: true` (CLI: `--dispatch`), a fresh `key`, and `parent` set to your own task;
-- give the agent that key, in its prompt or as `AGENTS_TASK_KEY`.
+## Dispatching another agent
 
-It joins that task, and the captain sees the hand-off. Each of your tasks has its own `task_id` (MCP) or `--task <key>` (CLI).
+1. Create its sub-task: `task_start` with `dispatch: true`, a fresh `key` (e.g. `fm/checkout-fix`), and `parent` set to your own task. CLI: `--dispatch --key <key> --parent <your key>`.
+2. Give the agent that key, in its prompt or as `AGENTS_TASK_KEY`. It joins the sub-task, and the captain sees the hand-off.
+3. Its decisions come to you; ask the captain the ones that are the captain's call.
+
+Each task has its own id. Address a sub-task with its `task_id` (MCP) or `--task <key>` (CLI).
 
 ## Rules
 
 - **Tracker text is safe to show anyone.** Name a credential when it matters; its value stays out.
-- **One piece of work, one task.** When you're handed something unrelated, end the current task and start a new one.
-- **The real work comes first.** If a tracker call fails, retry it once, then carry on with the work.
+- **One piece of work, one task.** Handed something unrelated? Finish this task and start a new one.
+- **Real work comes first.** A failed tracker call gets one retry, then the work carries on.

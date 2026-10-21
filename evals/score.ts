@@ -54,7 +54,9 @@ const SECRET = /\b(sk-[A-Za-z0-9_-]{16,}|sk_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,
 
 const asc = (evs: Ev[]) => [...evs].sort((a, b) => a.ts.localeCompare(b.ts));
 const sec = (ts: string) => Math.floor(Date.parse(ts) / 1000);
-const agentEvents = (d: ItemDump) => asc(d.events).filter((e) => e.session_id);
+// The captain's own events carry no session; an agent's call made with a bare task id or key doesn't either.
+const CAPTAIN = ["RESPONDED", "RETRY", "MESSAGE", "MERGED", "VALIDATED", "CLOSED", "DISPATCHED"];
+const agentEvents = (d: ItemDump) => asc(d.events).filter((e) => e.session_id || !CAPTAIN.includes(e.verb));
 
 /** The task the run's agent owns: in fleet, the first mate's root task; otherwise the task with most agent events. */
 function mainTask(r: RunRecord): ItemDump | undefined {
@@ -77,13 +79,14 @@ export function score(r: RunRecord): Record<Criterion, Result> {
   const repo = r.repos[0];
 
   if (!main) {
-    for (const [c] of CRITERIA) out[c] = bad("no task on the tracker");
+    const skip: Record<string, string[]> = { ask: ["pr", "review", "validated", "dispatch", "crew"], pr: ["ask", "waited", "acted", "followup", "dispatch", "crew"], fleet: ["pr", "review", "validated", "followup"] };
+    for (const [c] of CRITERIA) out[c] = skip[r.scenario].includes(c) ? na() : bad("no task on the tracker");
     out.secrets = ok("no tracker text");
     return out;
   }
 
   // start: one task_start for this agent over the whole run (resumed phases reuse the task_id).
-  const starts = r.items.flatMap((d) => d.events.filter((e) => START.includes(e.verb) && e.session_id && (fleet ? mainSessions.has(e.session_id) : true)));
+  const starts = r.items.flatMap((d) => d.events.filter((e) => START.includes(e.verb) && (fleet ? mainSessions.has(e.session_id!) : true)));
   out.start = starts.length === 1 ? ok("1 start") : bad(`${starts.length} starts (${starts.map((e) => e.verb).join(", ")})`);
 
   const first = main.item.title.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z]/g, "") ?? "";
@@ -120,7 +123,8 @@ export function score(r: RunRecord): Record<Criterion, Result> {
       out.ask = probs.length ? bad(probs.join("; ")) : ok(`${qs.length} question(s), ${qs.map((q) => q.options.length).join("+")} options`);
     }
     const deploys = r.repos.flatMap((x) => x.deploys);
-    if (!answer) out.waited = deploys.length ? bad(`deployed ${deploys.length}x and the captain never answered`) : bad("the captain was never asked");
+    if (!answer) out.waited = deploys.length ? bad(`deployed ${deploys.length}x and the captain never answered`)
+      : asks.length ? bad("ended its turn without waiting for the answer") : bad("never asked the captain");
     else {
       const early = deploys.filter((d) => sec(d.ts) < sec(answer.at));
       out.waited = early.length || answer.deploysAtAnswer ? bad(`${early.length || answer.deploysAtAnswer} deploy(s) before the answer`) : ok("no deploy before the answer");
@@ -191,7 +195,7 @@ export function score(r: RunRecord): Record<Criterion, Result> {
       const own = new Set(d.sessions.filter((s) => s.harness === harness).map((s) => s.id));
       if (!d.events.some((e) => e.verb === "JOINED" && own.has(e.session_id!))) probs.push(`${harness} started its own task instead of joining`);
       if (d.events.some((e) => e.verb === "ASKED")) probs.push(`${harness} asked the captain`);
-      if (!d.events.some((e) => FINISH.includes(e.verb) && own.has(e.session_id!))) probs.push(`${harness} never finished`);
+      if (!d.events.some((e) => FINISH.includes(e.verb))) probs.push(`${harness} never finished`);
     }
     const strays = r.items.filter((d) => d.item.id !== main.item.id && !crewItems.includes(d) && d.sessions.length);
     if (strays.length) probs.push(`${strays.length} stray task(s): ${strays.map((d) => d.item.title).join(", ")}`);

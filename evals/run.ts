@@ -71,8 +71,8 @@ test("formatPrice adds thousands separators", () => {
 };
 
 const PROMPTS = {
-  ask: "Fix the failing test in calc.js (run `node --test`) and commit the fix. Then it needs to ship with ./deploy.sh — whether to deploy, and to canary or full, is the captain's call, not yours.",
-  pr: "Fix the failing test in calc.js (run `node --test`) and commit the fix on a branch named fix/discount. This repo has no GitHub remote, so treat it as if you opened PR https://github.com/example/checkout/pull/101 for that branch: report the PR on the tracker as open, then ci_running while you run the tests, then ci_passed or ci_failed. Then hand it over for the captain's review. Whether and when it merges is the captain's call.",
+  ask: "Fix the failing test in calc.js (run `node --test`) and commit the fix. Then it needs to ship with ./deploy.sh — whether to deploy, and to canary or full, is the captain's call, not yours. Work directly in this checkout.",
+  pr: "Fix the failing test in calc.js (run `node --test`) and commit the fix on a branch named fix/discount. This repo has no GitHub remote, so treat it as if you opened PR https://github.com/example/checkout/pull/101 for that branch: report the PR on the tracker as open, then ci_running while you run the tests, then ci_passed or ci_failed. Then hand it over for the captain's review. Whether and when it merges is the captain's call. Work directly in this checkout.",
 };
 // Phase 2 stands in for the harness hook / the captain's next prompt. It carries no content: the agent has to
 // make a tracker call to receive the captain's message (captain_messages in the response).
@@ -394,14 +394,14 @@ async function runOne(o: { harness: string; scenario: "ask" | "pr" | "fleet"; la
     return p;
   };
   const mainTask = async () => (await dumpItems(o.port)).filter((d) => d.item.id.startsWith("task:") && !d.item.parent_id)
-    .sort((a, b) => b.events.filter((e) => e.session_id).length - a.events.filter((e) => e.session_id).length)[0];
+    .sort((a, b) => b.events.length - a.events.length)[0];
   try {
     if (o.scenario === "fleet") {
       await phase("work", h.start(ctx, fleetPrompt(ctx, repos)), LIMITS.fleet);
     } else {
       const work = await phase("work", h.start(ctx, PROMPTS[o.scenario]), LIMITS.work);
       const task = await mainTask();
-      const finished = task?.events.some((e) => e.session_id && ["DONE", "FAILED", "IN-REVIEW"].includes(e.verb));
+      const finished = task?.events.some((e) => ["DONE", "FAILED", "IN-REVIEW"].includes(e.verb));
       if (!task || !finished) rec.notes.push("the agent never finished the first phase: no second phase");
       else if (!work.session) rec.notes.push("couldn't find the harness session id: no second phase");
       else if (o.scenario === "ask") {
@@ -432,7 +432,7 @@ async function runOne(o: { harness: string; scenario: "ask" | "pr" | "fleet"; la
 }
 
 function fleetPrompt(c: Ctx, repos: Record<string, string>) {
-  const crew = "Fix the failing test (node --test) and commit. Report on the agent tracker by joining the task with key <key>. Do NOT deploy: deploying is the first mate's call. If a decision comes up, say so in a task update starting \"DECISION NEEDED:\" and finish.";
+  const crew = "Fix the failing test (node --test) and commit, working directly in this checkout. Report on the agent tracker by joining the task with key <key>. Do NOT deploy: deploying is the first mate's call. If a decision comes up, say so in a task update starting \"DECISION NEEDED:\" and finish.";
   return `You are the first mate. The captain talks only to you; you run the crew. Report your work with the agent-tracker skill.
 
 Two projects each have a failing test:
