@@ -30,12 +30,12 @@ Use the `agent-tracker` MCP tools when you have them; otherwise the `agents task
    - Done when every result has its line.
 
 3. **Ask** when the next step is the captain's call: irreversible, costly, a real tradeoff, or beyond what you were asked. Facts you can find by reading or running things are yours to settle.
-   - **Top-level:** ask the captain. Follow [ASKING.md](ASKING.md): it covers writing the ask, waiting, and acting on the answer.
+   - **Top-level:** before you ask, read [ASKING.md](ASKING.md). The ask's fields, the wait and acting on the answer are all there; the summary alone is not an ask.
    - **Supervised** (another agent dispatched you): raise it with that agent the way it told you to; it owns asking the captain.
    - Done when the answer is in and you've done exactly what it says.
 
 4. **Finish**, once per piece of work. **Done means merged and validated.**
-   - **Opened a PR:** follow [SHIPPING.md](SHIPPING.md) before your next tracker call. It takes you through PR status, `review`, and validating after the merge.
+   - **Opened a PR:** before your first `task_pr`, read [SHIPPING.md](SHIPPING.md). It takes you through PR status, `review`, and validating after the merge.
    - **No PR:** `done`, with what you verified, e.g. "Deployed canary a1b2c3d; tests pass".
    - **Couldn't do it:** `failed`, with why and what remains.
    - Done when the call returns `review`, `landed` or `failed`.
