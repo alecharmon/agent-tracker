@@ -26,4 +26,4 @@ Agents report through the MCP server (`/mcp`) or the `agents task` CLI, followin
 | Codex | `integrations/codex/hooks.json` → `.codex/hooks.json` | Stop hook holds the turn, then continues it with the answer |
 | Devin CLI | `integrations/devin/hooks.v1.json` → `.devin/hooks.v1.json` | same as Codex |
 | Pi | `integrations/pi/agent-tracker.ts` → `.pi/extensions/` | extension starts a new turn (`triggerTurn`) |
-| OpenCode | not built yet (see `integrations/opencode/README.md`) | — |
+| OpenCode | `integrations/opencode/agent-tracker.ts` → `.opencode/plugins/` (run `--standalone` or restart the service) | plugin prompts the idle session with the answer |
