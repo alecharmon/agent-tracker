@@ -1,4 +1,4 @@
-import { CheckIcon } from "lucide-react"
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import * as React from "react"
 import { RichText } from "@/components/rich-text"
@@ -9,9 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { Trace, TraceDescription, TraceLine, TraceTitle } from "@/components/ui/trace"
-import { ago, api, duration, harnessLabel, type Item, type ItemDetail, lane, respond, useNow } from "@/lib/api"
+import { ago, api, duration, harnessLabel, type Item, type ItemDetail, lane, respond, STATE_LABEL, useNow } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { StateIcon } from "./states"
+import { PrLink, prsOf, Status, Steps } from "./Inbox"
+import { StateIcon, tone } from "./states"
 
 const OTHER = "__other"
 const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl "
@@ -29,28 +30,98 @@ function useWide(query = "(min-width: 768px)") {
 }
 
 /**
- * Needs-you detail: what the agent needs, its questions as choices (or your own words), and free feedback.
- * A centered modal on wider screens, a full-height sheet on phones.
+ * The task modal: a centered dialog on wider screens, a full-height sheet on phones.
+ * Needs-you tasks show the agent's questions; everything else shows steps, PRs, actions and the message box.
+ * j / → and k / ← step through `siblings` (the column the task was opened from).
  */
-export function AskSheet({ item, onClose, onAnswered }: {
+export function TaskModal({ item, siblings, onNavigate, onClose, onAnswered }: {
   item: Item | null
+  siblings: Item[]
+  onNavigate: (i: Item) => void
   onClose: () => void
   onAnswered: (id: string) => void
 }) {
   const wide = useWide()
+  const at = item ? siblings.findIndex((s) => s.id === item.id) : -1
+  const go = React.useCallback((d: number) => {
+    const next = siblings[at + d]
+    if (next) onNavigate(next)
+  }, [siblings, at, onNavigate])
+  React.useEffect(() => {
+    if (!item) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      // Typing, or arrowing through a question's options, keeps its keys.
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable=true], [role=radiogroup]")) return
+      if (e.key === "j" || e.key === "ArrowRight") (e.preventDefault(), go(1))
+      else if (e.key === "k" || e.key === "ArrowLeft") (e.preventDefault(), go(-1))
+    }
+    addEventListener("keydown", onKey)
+    return () => removeEventListener("keydown", onKey)
+  }, [item, go])
+
+  // Opened programmatically (not from a Trigger), so point initial focus into the modal ourselves.
+  const focusRef = React.useRef<HTMLDivElement>(null)
+  const Title = wide ? DialogTitle : SheetTitle
+  const Description = wide ? DialogDescription : SheetDescription
+  const nav = siblings.length > 1 && at >= 0 && (
+    <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5 pr-12 text-xs text-muted-foreground">
+      <Button size="icon-sm" variant="ghost" disabled={at <= 0} onClick={() => go(-1)} aria-label="Previous task (k)"><ChevronLeftIcon /></Button>
+      <Button size="icon-sm" variant="ghost" disabled={at >= siblings.length - 1} onClick={() => go(1)} aria-label="Next task (j)"><ChevronRightIcon /></Button>
+      <span className="tabular-nums">{at + 1} of {siblings.length}</span>
+      <span className="ml-auto hidden sm:inline"><kbd className="rounded border px-1 font-sans">j</kbd> <kbd className="rounded border px-1 font-sans">k</kbd> or <kbd className="rounded border px-1 font-sans">←</kbd> <kbd className="rounded border px-1 font-sans">→</kbd></span>
+    </div>
+  )
   const body = item && (
-    <AskBody key={item.id} item={item} onDone={() => (onAnswered(item.id), onClose())}
-      Title={wide ? DialogTitle : SheetTitle} Description={wide ? DialogDescription : SheetDescription} />
+    <div ref={focusRef} tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
+      {nav}
+      {item.state === "needs_me" ? (
+        <AskBody key={item.id} item={item} Title={Title} Description={Description}
+          onDone={() => {
+            // Answered: on to the next task in the column, or close at the end.
+            onAnswered(item.id)
+            const next = siblings[at + 1]
+            if (next) onNavigate(next)
+            else onClose()
+          }} />
+      ) : (
+        <DetailBody key={item.id} item={item} Title={Title} Description={Description} />
+      )}
+    </div>
   )
   const onOpenChange = (o: boolean) => !o && onClose()
   return wide ? (
     <Dialog open={!!item} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(85vh,52rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">{body}</DialogContent>
+      <DialogContent initialFocus={focusRef} className="flex max-h-[min(85vh,52rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">{body}</DialogContent>
     </Dialog>
   ) : (
     <Sheet open={!!item} onOpenChange={onOpenChange}>
-      <SheetContent className="gap-0 p-0 data-[side=right]:w-full">{body}</SheetContent>
+      <SheetContent initialFocus={focusRef} className="gap-0 p-0 data-[side=right]:w-full">{body}</SheetContent>
     </Sheet>
+  )
+}
+
+function DetailBody({ item, Title, Description }: { item: Item; Title: Slot; Description: Slot }) {
+  const now = useNow(1_000)
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 flex-col gap-2 border-b p-5 pr-12">
+        <span className={cn("flex items-center gap-1.5 text-xs font-medium", tone(item.state).text)}>
+          <StateIcon state={item.state} className="size-3" /> {STATE_LABEL[item.state] ?? item.state}
+        </span>
+        <Title className="text-base font-semibold">{item.title}</Title>
+        <Description className="text-sm text-muted-foreground">
+          {[item.repo, item.harnesses.map(harnessLabel).join(" → ") || lane(item), item.model].filter(Boolean).join(" · ")}
+        </Description>
+        <div className="flex flex-wrap items-center gap-2 text-xs"><Status item={item} now={now} /></div>
+        {prsOf(item).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">{prsOf(item).map((p) => <PrLink key={p.url} url={p.url} status={p.status} />)}</div>
+        )}
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <Steps item={item} now={now} onAsk={() => {}} />
+      </div>
+    </div>
   )
 }
 

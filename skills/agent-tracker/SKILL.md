@@ -14,7 +14,8 @@ Two interfaces, same five operations. Use the `agent-tracker` MCP tools when you
 | start | `task_start` | `agents task start "<title>"` |
 | milestone | `task_update` | `agents task update "<text>"` |
 | decision | `task_ask`, then `task_answers` | `agents task ask …`, then `agents task answers` |
-| end | `task_done` (`done` or `failed`) | `agents task done "<result>"` / `agents task fail "<why>"` |
+| PR status | `task_pr` (`open`, `ci_running`, `ci_passed`, `ci_failed`, `merged`, `closed`) | `agents task pr <url> --status <status>` |
+| end | `task_done` (`review`, `done` or `failed`) | `agents task review "<text>" --url <pr>` / `agents task done "<result>"` / `agents task fail "<why>"` |
 
 ## Steps
 
@@ -33,10 +34,17 @@ Two interfaces, same five operations. Use the `agent-tracker` MCP tools when you
    - **Top-level:** ask the captain. Read [ASKING.md](ASKING.md) and follow it.
    - Done when you hold an `answered` result and have acted on exactly what it says.
 
-4. **End.** Make this your last tracker call, exactly once.
-   - `done` carries the result in one or two lines, plus the PR link.
-   - `failed` carries the reason and what remains.
-   - Done when the call returns `landed` or `failed`.
+4. **Hand off or end.** **Done means merged and validated.**
+   - **PRs:** report each PR's status every time it changes (opened, CI running, CI failed or passed, merged, closed). A task can have several PRs.
+   - **`review`** when your PRs are up: what's in them, plus the `url`. Merging is the captain's call (or your dispatcher's).
+   - **After every PR has merged,** the reply (or a captain message) tells you to validate. Check the change works where it shipped (tests on main, the deploy, the behaviour), then send **`done`** with what you checked.
+   - **`done` directly** when there's no PR and you verified the result, e.g. a report delivered or a decision carried out.
+   - **`failed`** with the reason and what remains.
+   - Done when the call returns `review`, `landed` or `failed`.
+
+## Follow-ups from the captain
+
+Any tracker response can carry **`captain_messages`**, or your harness can wake you with one. That can happen in any state, including after you finished. They're the captain's follow-ups and new direction: act on them, report milestones as usual, and finish again when the follow-up is complete.
 
 ## Dispatching other agents
 

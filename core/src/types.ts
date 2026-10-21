@@ -1,4 +1,6 @@
-export const STATES = ["underway", "needs_me", "answered", "failed", "gated", "landed", "idle", "unknown"] as const;
+// review: PR open, waiting on the captain. validating: merged, the agent is checking it works.
+// landed ("Done") means merged AND validated.
+export const STATES = ["underway", "needs_me", "answered", "review", "validating", "failed", "gated", "landed", "idle", "unknown"] as const;
 export type State = (typeof STATES)[number];
 
 /** What a needs-you item is asking the captain. */
@@ -95,6 +97,8 @@ export interface Item {
   pr_count: number;
   /** Harnesses whose sessions worked on this task. */
   harnesses: string[];
+  /** Every PR on the task with its last reported status. */
+  pr_list: { url: string; status: PrStatus | null }[];
 }
 
 export interface TrackerEvent {
@@ -107,12 +111,18 @@ export interface TrackerEvent {
   session_id: string | null;
 }
 
+export const PR_STATUSES = ["open", "ci_running", "ci_passed", "ci_failed", "merged", "closed"] as const;
+export type PrStatus = (typeof PR_STATUSES)[number];
+
 export interface Pr {
   url: string;
   item_id: string;
   verb: string | null;
   sha: string | null;
   seen_at: string;
+  /** Reported by the agent; null when the PR was only seen in status text. */
+  status: PrStatus | null;
+  note: string | null;
 }
 
 export interface ItemFilter {
@@ -130,4 +140,15 @@ export interface ItemFilter {
 export interface Summary {
   counts: Record<string, number>;
   last_ingest: { source: string; home: string; at: string }[];
+}
+
+/** A follow-up or direction from the captain to whichever agent works the task. */
+export interface CaptainMessage {
+  id: number;
+  item_id: string;
+  at: string;
+  text: string;
+  /** When an agent received it, and which session. Null while queued. */
+  delivered_at: string | null;
+  session_id: string | null;
 }

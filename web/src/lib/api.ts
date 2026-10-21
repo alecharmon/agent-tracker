@@ -1,8 +1,8 @@
-import type { Ask, Item, Pr, ResponseIn, Session, TrackerEvent, TrackerResponse } from "@agent-tracker/core"
+import type { Ask, CaptainMessage, Item, Pr, ResponseIn, Session, TrackerEvent, TrackerResponse } from "@agent-tracker/core"
 import * as React from "react"
 
 export type { Ask, Item, Pr, ResponseIn, Session, TrackerEvent, TrackerResponse }
-export type ItemDetail = { item: Item; events: TrackerEvent[]; prs: Pr[]; responses: TrackerResponse[]; sessions: Session[] }
+export type ItemDetail = { item: Item; events: TrackerEvent[]; prs: Pr[]; responses: TrackerResponse[]; sessions: Session[]; messages: CaptainMessage[] }
 
 const KEY = "agents-token"
 const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname)
@@ -40,6 +40,18 @@ export const refreshAll = () => dispatchEvent(new Event(REFRESH))
 
 export async function respond(item: Item, r: ResponseIn) {
   const out = await api<ItemDetail>(`/api/items/${encodeURIComponent(item.id)}/respond`, r)
+  refreshAll()
+  return out
+}
+
+export async function sendMessage(item: Item, text: string) {
+  const out = await api(`/api/items/${encodeURIComponent(item.id)}/message`, { text })
+  refreshAll()
+  return out
+}
+
+export async function setStage(item: Item, stage: "merged" | "validated" | "closed") {
+  const out = await api(`/api/items/${encodeURIComponent(item.id)}/stage`, { stage })
   refreshAll()
   return out
 }
@@ -94,7 +106,7 @@ export function ago(iso: string | null, now: number) {
 export const lane = (i: Item) => i.agent ?? i.owner ?? i.source
 /** When an item stops on the timeline: live ones run to now. */
 export const endOf = (i: Item, now: number) =>
-  ["underway", "needs_me", "answered"].includes(i.state) ? now : Date.parse(i.updated_at ?? i.last_seen)
+  ["underway", "needs_me", "answered", "validating"].includes(i.state) ? now : Date.parse(i.updated_at ?? i.last_seen)
 export const startOf = (i: Item) => Date.parse(i.started_at ?? i.first_seen)
 
 const HARNESS: Record<string, string> = {
@@ -113,5 +125,5 @@ export function provider(model: string | null, harness?: string | null) {
 }
 
 export const STATE_LABEL: Record<string, string> = {
-  needs_me: "Needs you", answered: "Answered", failed: "Failed", underway: "Running", landed: "Done", gated: "Gated", idle: "Idle", unknown: "Unknown",
+  needs_me: "Needs you", answered: "Answered", review: "In review", validating: "Validating", failed: "Failed", underway: "Running", landed: "Done", gated: "Gated", idle: "Idle", unknown: "Unknown",
 }

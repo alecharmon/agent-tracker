@@ -1,4 +1,4 @@
-import { AlertTriangleIcon, AsteriskIcon, MailCheckIcon, WavesIcon, BotIcon, CircleAlertIcon, CircleIcon, ApertureIcon, LoaderCircleIcon, PauseIcon, SparkleIcon } from "lucide-react"
+import { AlertTriangleIcon, AsteriskIcon, GitPullRequestIcon, MailCheckIcon, ScanSearchIcon, WavesIcon, BotIcon, CircleAlertIcon, CircleIcon, ApertureIcon, LoaderCircleIcon, PauseIcon, SparkleIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { provider } from "@/lib/api"
 
@@ -20,6 +20,18 @@ export const TONE: Record<string, { bar: string; text: string; dot: string }> = 
     text: "text-violet-600 dark:text-violet-400",
     dot: "text-violet-500",
   },
+  // PR open, waiting on the captain.
+  review: {
+    bar: "border-sky-500/30 bg-linear-to-r from-sky-500/10 to-sky-500/25 text-sky-800 dark:text-sky-200",
+    text: "text-sky-600 dark:text-sky-400",
+    dot: "text-sky-500",
+  },
+  // Merged; the agent is checking it works.
+  validating: {
+    bar: "border-teal-500/30 bg-linear-to-r from-teal-500/10 via-teal-500/20 to-teal-500/30 text-teal-800 dark:text-teal-200",
+    text: "text-teal-600 dark:text-teal-400",
+    dot: "text-teal-500",
+  },
   failed: {
     bar: "border-red-500/30 bg-linear-to-r from-red-500/10 to-red-500/25 text-red-700 dark:text-red-300",
     text: "text-red-600 dark:text-red-400",
@@ -35,6 +47,8 @@ export function StateIcon({ state, className }: { state: string; className?: str
   if (state === "underway") return <LoaderCircleIcon className={cn(c, "animate-spin [animation-duration:1.6s]")} aria-hidden />
   if (state === "needs_me") return <AlertTriangleIcon className={c} aria-hidden />
   if (state === "answered") return <MailCheckIcon className={c} aria-hidden />
+  if (state === "review") return <GitPullRequestIcon className={c} aria-hidden />
+  if (state === "validating") return <ScanSearchIcon className={c} aria-hidden />
   if (state === "failed") return <CircleAlertIcon className={c} aria-hidden />
   if (state === "landed") return <CircleIcon className={cn(c, "size-2 fill-current")} aria-hidden />
   return <PauseIcon className={c} aria-hidden />

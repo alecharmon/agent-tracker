@@ -205,3 +205,84 @@ test("migrate upgrades a database created by an older schema", async () => {
   const r = await t.taskStart(db, { title: "after upgrade", harness: "pi", session: "x" });
   assert.equal((await t.sessionTask(db, "pi", "x"))!.task_id, r.task_id);
 });
+
+test("done means merged and validated: review -> merged (agent told to validate) -> done", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { getItem } = await import("./store.ts");
+  const st = async (h: string) => { const r = await getItem(db, t.parseHandle(h).task); return r && "item" in r ? r.item.state : null; };
+  const { task_id } = await t.taskStart(db, { title: "Fix login", harness: "codex", session: "c1" });
+  await assert.rejects(t.taskFinish(db, task_id, { outcome: "review", text: "opened it" }), /needs the PR link/);
+  await t.taskFinish(db, task_id, { outcome: "review", text: "PR up", url: "https://github.com/o/r/pull/5" });
+  assert.equal(await st(task_id), "review");
+  await t.captainStage(db, t.parseHandle(task_id).task, "merged");
+  assert.equal(await st(task_id), "validating");
+  // The agent's next call carries the "validate it" message.
+  const u = await t.taskUpdate(db, task_id, { text: "checking main" });
+  assert.match((u as any).captain_messages[0].text, /Merged: https:\/\/github.com\/o\/r\/pull\/5\. Validate it/);
+  assert.equal(u.state, "validating");
+  await t.taskFinish(db, task_id, { outcome: "done", text: "main green, deploy verified" });
+  assert.equal(await st(task_id), "landed");
+  await assert.rejects(t.captainStage(db, t.parseHandle(task_id).task, "shipped"), /stage must be/);
+});
+
+test("captain messages reach the agent in any state, once; queued ones go to the next agent to join", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { task_id } = await t.taskStart(db, { title: "Write docs", key: "docs", harness: "pi", session: "p1" });
+  await t.taskFinish(db, task_id, { outcome: "done", text: "done" });
+  await t.captainMessage(db, "task:docs", "Also add a FAQ section");
+  assert.deepEqual(await t.taskPending(db, task_id), { state: "landed", answer: "none", messages: 1 });
+  const r = await t.taskUpdate(db, task_id, { text: "on it" }) as any; // follow-up on a done task
+  assert.equal(r.captain_messages[0].text, "Also add a FAQ section");
+  assert.equal(((await t.taskUpdate(db, task_id, { text: "again" })) as any).captain_messages, undefined); // once
+  await t.captainMessage(db, "task:docs", "Hand-off note for whoever picks this up");
+  const joined = await t.taskStart(db, { title: "x", key: "docs", harness: "claude-code" }) as any;
+  assert.equal(joined.captain_messages[0].text, "Hand-off note for whoever picks this up");
+  await assert.rejects(t.captainMessage(db, "task:docs", "  "), /message text is required/);
+});
+
+test("multiple PRs per task: the agent reports each status; all merged -> validating", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { getItem } = await import("./store.ts");
+  const get = async (h: string) => { const r = await getItem(db, t.parseHandle(h).task); return r && "item" in r ? r : null; };
+  const { task_id } = await t.taskStart(db, { title: "Dark mode", harness: "codex", session: "c" });
+  const A = "https://github.com/o/web/pull/1", B = "https://github.com/o/api/pull/2";
+  await t.taskPr(db, task_id, { url: A, status: "ci_running" });
+  await t.taskPr(db, task_id, { url: B, status: "open" });
+  await t.taskFinish(db, task_id, { outcome: "review", text: "two PRs up", url: A });
+  assert.equal((await get(task_id))!.item.state, "review");
+  await assert.rejects(t.taskPr(db, task_id, { url: A, status: "shipped" }), /status must be one of/);
+  await assert.rejects(t.taskPr(db, task_id, { url: "https://example.com/x", status: "open" }), /pull request URL/);
+  await t.taskPr(db, task_id, { url: A, status: "ci_failed", note: "lint" });
+  await t.taskPr(db, task_id, { url: A, status: "merged" });
+  assert.equal((await get(task_id))!.item.state, "review"); // B still open
+  const r = await t.taskPr(db, task_id, { url: B, status: "merged" }) as any;
+  assert.equal(r.state, "validating");
+  assert.match(r.note, /Validate it now/);
+  const d = (await get(task_id))!;
+  assert.deepEqual(d.prs.map((p) => p.status).sort(), ["merged", "merged"]);
+  assert.equal(d.prs.find((p) => p.url === A)!.note, null);
+});
+
+test("captain Mark merged settles every open PR; all closed unmerged -> failed", async () => {
+  const db = nodeDb();
+  await migrate(db);
+  const t = await import("./tasks.ts");
+  const { getItem } = await import("./store.ts");
+  const { task_id } = await t.taskStart(db, { title: "x", harness: "pi", session: "p" });
+  await t.taskPr(db, task_id, { url: "https://github.com/o/a/pull/1", status: "open" });
+  await t.taskPr(db, task_id, { url: "https://github.com/o/a/pull/2", status: "ci_passed" });
+  await t.taskFinish(db, task_id, { outcome: "review", text: "up", url: "https://github.com/o/a/pull/1" });
+  await t.captainStage(db, t.parseHandle(task_id).task, "merged");
+  const r = await getItem(db, t.parseHandle(task_id).task);
+  assert.ok(r && "item" in r && r.item.state === "validating" && r.prs.every((p) => p.status === "merged"));
+  const two = await t.taskStart(db, { title: "y", harness: "pi", session: "q" });
+  await t.taskPr(db, two.task_id, { url: "https://github.com/o/b/pull/3", status: "open" });
+  const closed = await t.taskPr(db, two.task_id, { url: "https://github.com/o/b/pull/3", status: "closed" });
+  assert.equal(closed.state, "failed");
+});

@@ -1,4 +1,4 @@
-import { type Db, harnessOf, taskAnswer, taskAsk, taskFinish, taskStart, taskUpdate } from "@agent-tracker/core";
+import { type Db, harnessOf, PR_STATUSES, taskAnswer, taskAsk, taskFinish, taskPr, taskStart, taskUpdate } from "@agent-tracker/core";
 
 // Minimal MCP server over streamable HTTP: JSON-RPC in, JSON out (no SSE stream needed for
 // request/response tools). Stateless: the client name from `initialize` rides along in the
@@ -89,14 +89,30 @@ const TOOLS = [
     },
   },
   {
+    name: "task_pr",
+    description:
+      "Report a pull request's status whenever it changes: open, ci_running, ci_passed, ci_failed, merged, closed. A task can have several PRs; report each. When every PR is merged (or closed), the reply tells you to validate.",
+    inputSchema: {
+      type: "object",
+      required: ["task_id", "url", "status"],
+      properties: {
+        task_id: ID,
+        url: { type: "string", description: "The GitHub pull request URL" },
+        status: { type: "string", enum: [...PR_STATUSES] },
+        note: { type: "string", description: "One line, e.g. which check failed" },
+      },
+    },
+  },
+  {
     name: "task_done",
-    description: "Finish the task. outcome 'done' when the work is complete, 'failed' when you could not do it. Say what happened.",
+    description:
+      "Finish your part. 'review' when you opened a PR (pass url): done comes after it is merged and validated. 'done' when the work is merged and validated, or needs no PR and you verified it. 'failed' when you could not do it. Say what happened.",
     inputSchema: {
       type: "object",
       required: ["task_id", "outcome", "text"],
       properties: {
         task_id: ID,
-        outcome: { type: "string", enum: ["done", "failed"] },
+        outcome: { type: "string", enum: ["review", "done", "failed"] },
         text: { type: "string", description: "Result or reason, one or two lines" },
         url: { type: "string", description: "PR or artifact link" },
       },
@@ -133,6 +149,8 @@ async function callTool(db: Db, name: string, a: any, client: string | undefined
         await sleep(Math.min(2000, Math.max(until - Date.now(), 0)));
       }
     }
+    case "task_pr":
+      return taskPr(db, a.task_id, { url: a.url, status: a.status, note: a.note });
     case "task_done":
       return taskFinish(db, a.task_id, { outcome: a.outcome, text: a.text, url: a.url });
     default:
@@ -148,7 +166,7 @@ async function handle(db: Db, m: Rpc, session: { client?: string }) {
         capabilities: { tools: {} },
         serverInfo: { name: "agent-tracker", version: "0.1.0" },
         instructions:
-          "Report your work to the captain's agent tracker: task_start when you begin, task_update on meaningful steps, task_ask (then task_answers) for decisions you must not guess, task_done at the end.",
+          "Report your work to the captain's agent tracker: task_start when you begin, task_update on meaningful steps, task_ask (then task_answers) for decisions you must not guess, task_done at the end. Any response may carry captain_messages: the captain's follow-ups and direction; act on them.",
       };
     case "ping":
       return {};

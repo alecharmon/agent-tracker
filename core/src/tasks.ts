@@ -1,6 +1,6 @@
 import { prUrls } from "./normalize.ts";
 import { type Db, getItem, hash, type Stmt } from "./store.ts";
-import type { Ask, TrackerResponse } from "./types.ts";
+import { type Ask, type CaptainMessage, PR_STATUSES, type PrStatus, type TrackerResponse } from "./types.ts";
 
 // Agent-reported tasks. The task is the unit the captain tracks; agents join it as sessions.
 // A task has a stable key (e.g. a first mate's task id) so the agent that plans it, the crewmate that
@@ -94,9 +94,23 @@ async function mustTask(db: Db, h: string, now: string) {
       { sql: `UPDATE items SET state = CASE WHEN state = 'answered' THEN 'underway' ELSE state END WHERE id = ?`, params: [item.id] },
       ...eventStmts(item.id, now, "ACKED", "picked up the answer", session),
     );
+  // Queued captain messages ride along on the agent's next call, whatever the task's state.
+  const queued = session ? r.messages.filter((m) => !m.delivered_at).reverse() : [];
+  if (queued.length)
+    stmts.push(
+      { sql: `UPDATE messages SET delivered_at = ?, session_id = ? WHERE item_id = ? AND delivered_at IS NULL`, params: [now, session, item.id] },
+      ...eventStmts(item.id, now, "DELIVERED", `${queued.length} message${queued.length > 1 ? "s" : ""} from the captain`, session),
+    );
   if (stmts.length) await db.batch(stmts);
-  return { item: read && item.state === "answered" ? { ...item, state: "underway" as const } : item, session };
+  return { item: read && item.state === "answered" ? { ...item, state: "underway" as const } : item, session, inbox: queued };
 }
+
+/** Attach delivered captain messages to an agent-facing result. */
+const withInbox = <T extends object>(result: T, inbox: CaptainMessage[]) =>
+  inbox.length
+    ? { ...result, captain_messages: inbox.map((m) => ({ at: m.at, text: m.text })),
+        note: "The captain sent you these messages: treat them as instructions and act on them." }
+    : result;
 
 export async function taskStart(db: Db, t: TaskStartIn, now = new Date().toISOString()) {
   check(str(t?.title, 200), "title is required (max 200 chars)");
@@ -151,7 +165,8 @@ export async function taskStart(db: Db, t: TaskStartIn, now = new Date().toISOSt
     },
     ...eventStmts(id, now, !existing ? "STARTED" : resumed ? "RESUMED" : "JOINED", `${harness}${t.model ? ` (${t.model})` : ""}: ${text}`, sid),
   ]);
-  const out = { task_id: handle(id, sid), key, joined: !!existing && !resumed, resumed };
+  const delivered = await mustTask(db, handle(id, sid), now);
+  const out = withInbox({ task_id: handle(id, sid), key, joined: !!existing && !resumed, resumed }, delivered.inbox);
   // A joining agent needs the state of play, including an ask still waiting on the captain.
   if (existing && existing.item.state !== "underway")
     return { ...out, state: existing.item.state, ...(existing.item.state === "needs_me" ? { waiting_on: existing.item.ask?.summary } : {}) };
@@ -161,16 +176,16 @@ export async function taskStart(db: Db, t: TaskStartIn, now = new Date().toISOSt
 export async function taskUpdate(db: Db, idOrNative: string, u: { text: string; url?: string }, now = new Date().toISOString()) {
   check(str(u?.text, 2000), "text is required (max 2000 chars)");
   check(opt(u.url, 500), "url too long");
-  const { item, session } = await mustTask(db, idOrNative, now);
+  const { item, session, inbox } = await mustTask(db, idOrNative, now);
   // An update while waiting on the captain doesn't clear the ask; only an answer does.
   await db.batch([
     { sql: `UPDATE items SET detail = ?, url = coalesce(?, url), updated_at = ?, last_seen = ?,
-              state = CASE WHEN state IN ('needs_me', 'answered') THEN state ELSE 'underway' END WHERE id = ?`,
+              state = CASE WHEN state IN ('needs_me', 'answered', 'review', 'validating') THEN state ELSE 'underway' END WHERE id = ?`,
       params: [u.text.trim(), u.url ?? null, now, now, item.id] },
     ...eventStmts(item.id, now, "WORKING", u.text.trim() + (u.url && !u.text.includes(u.url) ? ` ${u.url}` : ""), session),
   ]);
-  const state = ["needs_me", "answered"].includes(item.state) ? item.state : "underway";
-  return { task_id: idOrNative, state, ...(state === "answered" ? { note: "The captain answered your question: call task_answers to read it." } : {}) };
+  const state = ["needs_me", "answered", "review", "validating"].includes(item.state) ? item.state : "underway";
+  return withInbox({ task_id: idOrNative, state, ...(state === "answered" ? { note: "The captain answered your question: call task_answers to read it." } : {}) }, inbox);
 }
 
 export function validateAsk(a: any): asserts a is Ask {
@@ -194,7 +209,7 @@ export function validateAsk(a: any): asserts a is Ask {
 
 export async function taskAsk(db: Db, idOrNative: string, ask: unknown, now = new Date().toISOString()) {
   validateAsk(ask);
-  const { item, session } = await mustTask(db, idOrNative, now);
+  const { item, session, inbox } = await mustTask(db, idOrNative, now);
   check(!["landed", "failed"].includes(item.state), "task is finished; start a new one");
   const clean: Ask = {
     summary: ask.summary.trim(),
@@ -208,7 +223,7 @@ export async function taskAsk(db: Db, idOrNative: string, ask: unknown, now = ne
       params: [JSON.stringify(clean), clean.summary, now, now, item.id] },
     ...eventStmts(item.id, now, "ASKED", clean.questions.map((q) => q.prompt).join(" / ") || clean.summary, session),
   ]);
-  return { task_id: idOrNative, state: "needs_me" as const };
+  return withInbox({ task_id: idOrNative, state: "needs_me" as const }, inbox);
 }
 
 /**
@@ -217,12 +232,12 @@ export async function taskAsk(db: Db, idOrNative: string, ask: unknown, now = ne
  */
 export async function taskAnswer(db: Db, idOrNative: string, now = new Date().toISOString(), opts: { peek?: boolean } = {}) {
   // A peek (hooks watching for the answer) reads without touching the session or delivering.
-  const { item, session } = opts.peek ? await peekTask(db, idOrNative) : await mustTask(db, idOrNative, now);
+  const { item, session, inbox } = opts.peek ? { ...(await peekTask(db, idOrNative)), inbox: [] as CaptainMessage[] } : await mustTask(db, idOrNative, now);
   const [ask] = await db.all<{ ts: string }>(
     `SELECT ts FROM events WHERE item_id = ? AND verb = 'ASKED' ORDER BY ts DESC, rowid DESC LIMIT 1`, [item.id]);
-  if (!ask) return { task_id: idOrNative, status: "no_question" as const };
+  if (!ask) return withInbox({ task_id: idOrNative, status: "no_question" as const }, inbox);
   const [r] = await db.all(`SELECT * FROM responses WHERE item_id = ? AND at >= ? ORDER BY id DESC LIMIT 1`, [item.id, ask.ts]);
-  if (!r) return { task_id: idOrNative, status: "pending" as const, state: item.state };
+  if (!r) return withInbox({ task_id: idOrNative, status: "pending" as const, state: item.state }, inbox);
   const resp = { ...r, answers: r.answers ? JSON.parse(r.answers) : undefined } as TrackerResponse;
   if (opts.peek) return { task_id: idOrNative, status: "answered" as const, delivered: !!resp.delivered_at, state: item.state };
   if (!resp.delivered_at)
@@ -239,22 +254,126 @@ export async function taskAnswer(db: Db, idOrNative: string, now = new Date().to
       ...(a.other ? { answer: a.other, free_text: true } : {}),
     };
   });
-  return { task_id: idOrNative, status: "answered" as const, at: resp.at, answers, feedback: resp.feedback ?? null };
+  return withInbox({ task_id: idOrNative, status: "answered" as const, at: resp.at, answers, feedback: resp.feedback ?? null }, inbox);
 }
 
-export async function taskFinish(db: Db, idOrNative: string, f: { outcome: "done" | "failed"; text: string; url?: string }, now = new Date().toISOString()) {
-  check(f?.outcome === "done" || f?.outcome === "failed", "outcome must be done or failed");
+/**
+ * The agent's part ends. done = merged and validated (or no PR, verified); review = PR open, waiting on the
+ * captain; failed = couldn't do it. The session stays attached so the captain can still send follow-ups.
+ */
+export async function taskFinish(db: Db, idOrNative: string, f: { outcome: "done" | "review" | "failed"; text: string; url?: string }, now = new Date().toISOString()) {
+  check(["done", "review", "failed"].includes(f?.outcome), "outcome must be done, review or failed");
   check(str(f.text, 2000), "text is required: say what happened (max 2000 chars)");
   check(opt(f.url, 500), "url too long");
-  const { item, session } = await mustTask(db, idOrNative, now);
-  const state = f.outcome === "done" ? "landed" : "failed";
+  if (f.outcome === "review") check(!!(f.url || prUrls(f.text).length), "review needs the PR link (url)");
+  const { item, session, inbox } = await mustTask(db, idOrNative, now);
+  const state = f.outcome === "done" ? "landed" : f.outcome;
+  const verb = { done: "DONE", review: "IN-REVIEW", failed: "FAILED" }[f.outcome];
+  const reviewPrs = f.outcome === "review" ? [...new Set([f.url, ...prUrls(f.text)].filter((u): u is string => !!u && PR_RE.test(u)))] : [];
   await db.batch([
+    ...reviewPrs.map((u) => ({
+      sql: `INSERT INTO prs (url, item_id, verb, sha, seen_at, status) VALUES (?,?,'PR',NULL,?,'open')
+            ON CONFLICT (url) DO UPDATE SET status = coalesce(prs.status, 'open'), item_id = excluded.item_id`,
+      params: [u, item.id, now] })),
     { sql: `UPDATE items SET state = ?, detail = ?, url = coalesce(?, url), updated_at = ?, last_seen = ? WHERE id = ?`,
       params: [state, f.text.trim(), f.url ?? null, now, now, item.id] },
-    ...(session ? [{ sql: `UPDATE sessions SET ended_at = ? WHERE id = ?`, params: [now, session] }] : []),
-    ...eventStmts(item.id, now, f.outcome === "done" ? "DONE" : "FAILED", f.text.trim() + (f.url && !f.text.includes(f.url) ? ` ${f.url}` : ""), session),
+    ...eventStmts(item.id, now, verb, f.text.trim() + (f.url && !f.text.includes(f.url) ? ` ${f.url}` : ""), session),
   ]);
-  return { task_id: idOrNative, state };
+  return withInbox({ task_id: idOrNative, state }, inbox);
+}
+
+export async function captainMessage(db: Db, idOrNative: string, text: unknown, now = new Date().toISOString()) {
+  check(str(text, 4000), "message text is required (max 4000 chars)");
+  const item = (await peekTask(db, idOrNative)).item;
+  await db.batch([
+    { sql: `INSERT INTO messages (item_id, at, text) VALUES (?,?,?)`, params: [item.id, now, (text as string).trim()] },
+    ...eventStmts(item.id, now, "MESSAGE", (text as string).trim()),
+  ]);
+  return { task_id: item.id, queued: true };
+}
+
+/** Captain moves a task along: the PR merged (agent validates next), validated (done), or closed unmerged. */
+export async function captainStage(db: Db, idOrNative: string, stage: unknown, now = new Date().toISOString()) {
+  check(["merged", "validated", "closed"].includes(stage as string), "stage must be merged, validated or closed");
+  const item = (await peekTask(db, idOrNative)).item;
+  const to = { merged: "validating", validated: "landed", closed: "failed" }[stage as "merged" | "validated" | "closed"];
+  const verb = { merged: "MERGED", validated: "VALIDATED", closed: "CLOSED" }[stage as "merged" | "validated" | "closed"];
+  const detail = { merged: "Merged; validating", validated: "Validated by the captain", closed: "PR closed without merging" }[stage as "merged" | "validated" | "closed"];
+  const stmts: Stmt[] = [
+    { sql: `UPDATE items SET state = ?, detail = ?, updated_at = ?, last_seen = ? WHERE id = ?`, params: [to, detail, now, now, item.id] },
+    ...eventStmts(item.id, now, verb, detail),
+  ];
+  // The captain's call covers every PR still in flight on the task.
+  if (stage !== "validated")
+    stmts.push({ sql: `UPDATE prs SET status = ?, seen_at = ? WHERE item_id = ? AND coalesce(status, 'open') NOT IN ('merged', 'closed')`,
+      params: [stage === "merged" ? "merged" : "closed", now, item.id] });
+  if (stage === "merged") {
+    const prs = (await db.all<{ url: string }>(`SELECT url FROM prs WHERE item_id = ? AND coalesce(status, 'open') != 'closed'`, [item.id])).map((p) => p.url);
+    stmts.push({ sql: `INSERT INTO messages (item_id, at, text) VALUES (?,?,?)`,
+      params: [item.id, now, `The captain marked it merged. ${VALIDATE(prs.join(", ") || item.url || "the PR")}`] });
+  }
+  await db.batch(stmts);
+  return { task_id: item.id, state: to };
+}
+
+const PR_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
+const VALIDATE = (prs: string) =>
+  `Merged: ${prs}. Validate it now: confirm the change works where it shipped (tests on main, the deploy, the behaviour), then call task_done with outcome done and what you checked, or report what failed.`;
+
+/**
+ * A task's PRs settle its state: every PR merged or closed (at least one merged) -> validating;
+ * every PR closed unmerged -> failed. Returns the statements and the new state, if it changes.
+ */
+async function settle(db: Db, taskId: string, state: string, now: string, session: string | null) {
+  const prs = await db.all<{ url: string; status: string | null }>(`SELECT url, status FROM prs WHERE item_id = ? AND status IS NOT NULL`, [taskId]);
+  if (!prs.length || prs.some((p) => !["merged", "closed"].includes(p.status!)) || ["landed", "validating", "failed"].includes(state)) return null;
+  const merged = prs.filter((p) => p.status === "merged").map((p) => p.url);
+  const to = merged.length ? "validating" : "failed";
+  return {
+    to,
+    stmts: [
+      { sql: `UPDATE items SET state = ?, detail = ?, updated_at = ?, last_seen = ? WHERE id = ?`,
+        params: [to, merged.length ? "Merged; validating" : "All PRs closed without merging", now, now, taskId] },
+      ...eventStmts(taskId, now, merged.length ? "MERGED" : "CLOSED", merged.length ? `all PRs settled: ${merged.join(", ")}` : "all PRs closed unmerged", session),
+    ] as Stmt[],
+    merged,
+  };
+}
+
+/** The agent reports one PR's status. A task can have several PRs. */
+export async function taskPr(db: Db, idOrNative: string, p: { url: string; status: string; note?: string }, now = new Date().toISOString()) {
+  check(typeof p?.url === "string" && PR_RE.test(p.url.trim()), "url must be a GitHub pull request URL");
+  check(PR_STATUSES.includes(p.status as PrStatus), `status must be one of ${PR_STATUSES.join(", ")}`);
+  check(opt(p.note, 500), "note too long");
+  const { item, session, inbox } = await mustTask(db, idOrNative, now);
+  const url = p.url.trim();
+  await db.batch([
+    { sql: `INSERT INTO prs (url, item_id, verb, sha, seen_at, status, note) VALUES (?,?,?,NULL,?,?,?)
+            ON CONFLICT (url) DO UPDATE SET item_id=excluded.item_id, status=excluded.status, note=excluded.note, seen_at=excluded.seen_at, verb=excluded.verb`,
+      params: [url, item.id, "PR", now, p.status, p.note?.trim() || null] },
+    { sql: `UPDATE items SET url = coalesce(url, ?), updated_at = ?, last_seen = ? WHERE id = ?`, params: [url, now, now, item.id] },
+    ...eventStmts(item.id, now, `PR-${p.status.toUpperCase().replace("_", "-")}`, `${url}${p.note ? ` ${p.note.trim()}` : ""}`, session),
+  ]);
+  const s = await settle(db, item.id, item.state, now, session);
+  if (s) await db.batch(s.stmts);
+  const out = { task_id: idOrNative, pr: { url, status: p.status }, state: s?.to ?? item.state };
+  // The agent that reported the merge validates next; say so in the reply rather than a queued message.
+  return withInbox(s?.to === "validating" ? { ...out, note: VALIDATE(s.merged.join(", ")) } : out, inbox);
+}
+
+/** What a hook watcher waits for: an undelivered answer or queued captain messages. Never delivers. */
+export async function taskPending(db: Db, idOrNative: string) {
+  const { item } = await peekTask(db, idOrNative);
+  const r = await getItem(db, item.id);
+  const d = r && "item" in r ? r : null;
+  const [ask] = await db.all<{ ts: string }>(
+    `SELECT ts FROM events WHERE item_id = ? AND verb = 'ASKED' ORDER BY ts DESC, rowid DESC LIMIT 1`, [item.id]);
+  const answer = ask ? d?.responses.find((x) => x.at >= ask.ts) : undefined;
+  return {
+    state: item.state,
+    answer: !ask ? "none" : !answer ? "pending" : answer.delivered_at ? "delivered" : "ready",
+    messages: d?.messages.filter((m) => !m.delivered_at).length ?? 0,
+  };
 }
 
 // Harness hooks: they know the harness's own session id, not our task handle.

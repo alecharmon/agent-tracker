@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, join } from "node:path";
 import { harnessOf } from "@agent-tracker/core";
@@ -15,8 +15,12 @@ export const TASK_USAGE = `agents task — report your work (for agents)
   agents task ask "<what you need and why>" -q "<question?>" -o "<option>[|<consequence>]" [-o …] [-q …] [--no-other]
   agents task ask --ask-json '<{"summary":…,"questions":[…]}>'
   agents task answers [--wait 25]     the captain's answer: answered | pending | no_question
-  agents task done "<result>" [--url u]
+  agents task pr <pr-url> --status <open|ci_running|ci_passed|ci_failed|merged|closed> [--note n]
+                                                       report each PR's status as it changes (several PRs per task is fine)
+  agents task review "<what's in the PR>" --url <pr>   PR open: done comes after merge + validation
+  agents task done "<result>" [--url u]                merged and validated (or no PR, verified)
   agents task fail "<why>"
+  Any reply may carry captain_messages: follow-ups and direction from the captain. Act on them.
   agents task id                      print the current task id
 
   The task is remembered per tmux pane (or working directory). Juggling several tasks? Address one with
@@ -128,11 +132,16 @@ export async function task(call: Call, args: string[], flags: Record<string, any
       }
     }
     case "done":
+    case "review":
     case "fail": {
       if (!text) throw new Error(`usage: agents task ${sub} "<text>"`);
-      const r = await post(`/api/tasks/${enc(currentTask(flags.task))}/done`, { outcome: sub === "done" ? "done" : "failed", text, url: flags.url });
-      rmSync(cachePath(), { force: true });
-      return print(r);
+      // The task stays current: the captain can still send follow-ups to this session.
+      return print(await post(`/api/tasks/${enc(currentTask(flags.task))}/done`, { outcome: sub === "fail" ? "failed" : sub, text, url: flags.url }));
+    }
+    case "pr": {
+      const [url] = rest;
+      if (!url || !flags.status) throw new Error("usage: agents task pr <pr-url> --status <open|ci_running|ci_passed|ci_failed|merged|closed> [--note n]");
+      return print(await post(`/api/tasks/${enc(currentTask(flags.task))}/pr`, { url, status: flags.status, note: flags.note }));
     }
     case "id":
       return print({ task_id: currentTask(flags.task) });
