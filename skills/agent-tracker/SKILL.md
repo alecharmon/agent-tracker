@@ -7,15 +7,15 @@ description: Report your task to the captain's tracker. Use when you start multi
 
 The captain follows **tasks**, not agents, and reads them from a phone. Your job is to keep your task's record true: one start, a milestone per result, the captain's calls asked, one finish.
 
-Use the `agent-tracker` MCP tools when you have them; otherwise the `agents task` CLI, which remembers your task (`agents task help` lists its flags).
+Use the `agent-tracker` MCP tools when you have them; otherwise the `agnt-trkr task` CLI, which remembers your task (`agnt-trkr task help` lists its flags).
 
 | | MCP | CLI |
 |---|---|---|
-| start | `task_start` | `agents task start` |
-| milestone | `task_update` | `agents task update` |
-| ask | `task_ask`, then `task_answers` | `agents task ask`, then `agents task answers` |
-| PR status | `task_pr` | `agents task pr` |
-| finish | `task_done` | `agents task review` / `done` / `fail` |
+| start | `task_start` | `agnt-trkr task start` |
+| milestone | `task_update` | `agnt-trkr task update` |
+| ask | `task_ask`, then `task_answers` | `agnt-trkr task ask`, then `agnt-trkr task answers` |
+| PR status | `task_pr` | `agnt-trkr task pr` |
+| finish | `task_done` | `agnt-trkr task review` / `done` / `fail` |
 
 ## Steps
 

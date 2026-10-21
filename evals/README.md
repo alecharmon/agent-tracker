@@ -33,7 +33,7 @@ Polls `GET /api/items`, waits 5s on each new ask (room to deploy early), then an
 |---|---|---|---|
 | claude | `claude -p --session-id … --mcp-config … --strict-mcp-config --setting-sources project` | MCP | `--resume` |
 | codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox -c mcp_servers.agent-tracker.url=…` | MCP | `exec resume <thread>` |
-| pi | `pi -p --no-mcp -a --skill .pi/skills/agent-tracker --session-id …` | CLI (`agents`, a wrapper around this checkout's CLI) | same `--session-id` |
+| pi | `pi -p --no-mcp -a --skill .pi/skills/agent-tracker --session-id …` | CLI (`agnt-trkr`, a wrapper around this checkout's CLI) | same `--session-id` |
 | devin | `devin -p --permission-mode dangerous --respect-workspace-trust false`, `.devin/mcp_config.json` | MCP | `-r <id>` from `devin list` |
 | opencode | `opencode run --standalone --auto --format json -m opencode-go/muse-spark-1.3-contributor`, `opencode.json` | MCP | `--session` |
 

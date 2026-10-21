@@ -473,8 +473,8 @@ async function main() {
   rmSync(root, { recursive: true, force: true });
   const binDir = join(root, "bin");
   mkdirSync(binDir, { recursive: true });
-  writeFileSync(join(binDir, "agents"), `#!/bin/sh\nexec "${NODE}" --no-warnings "${join(ROOT, "cli/src/main.ts")}" "$@"\n`);
-  chmodSync(join(binDir, "agents"), 0o755);
+  writeFileSync(join(binDir, "agnt-trkr"), `#!/bin/sh\nexec "${NODE}" --no-warnings "${join(ROOT, "cli/src/main.ts")}" "$@"\n`);
+  chmodSync(join(binDir, "agnt-trkr"), 0o755);
   const skill = skillFiles(a["skill-ref"]);
   const jobs: { harness: string; scenario: "ask" | "pr" | "fleet" }[] = [];
   for (const s of scenarios)

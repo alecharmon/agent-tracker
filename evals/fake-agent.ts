@@ -1,11 +1,11 @@
-// A scripted agent that follows the skill to the letter (through the `agents task` CLI). The `fake` harness runs it
+// A scripted agent that follows the skill to the letter (through the `agnt-trkr task` CLI). The `fake` harness runs it
 // to check the eval pipeline and rubric end to end without model spend: it should score every criterion.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
 const [scenario, phase] = process.argv.slice(2);
 const sh = (cmd: string, ...args: string[]) => execFileSync(cmd, args, { encoding: "utf8" }).trim();
-const agents = (...args: string[]) => JSON.parse(sh("agents", "task", ...args));
+const agents = (...args: string[]) => JSON.parse(sh("agnt-trkr", "task", ...args));
 const commit = (msg: string) => { sh("git", "add", "-A"); sh("git", "commit", "-q", "-m", msg); };
 const fix = () => writeFileSync("calc.js", readFileSync("calc.js", "utf8").replace("(1 - discountPct)", "(1 - discountPct / 100)"));
 const PR = "https://github.com/example/checkout/pull/101";

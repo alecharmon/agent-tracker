@@ -13,7 +13,7 @@ The captain answers from a phone, between other agents, without opening your ses
 - **ids:** short slugs, e.g. `deploy` / `canary`.
 - **allow_other:** leave it on (the default) so the captain can answer in their own words. Turn it off only when your options are the complete set.
 
-CLI: `agents task ask "<summary>" -q "<question?>" -o "<label>|<consequence>" -o … [-q … -o …]`.
+CLI: `agnt-trkr task ask "<summary>" -q "<question?>" -o "<label>|<consequence>" -o … [-q … -o …]`.
 
 Done when the call returns `needs_me`.
 
@@ -22,7 +22,7 @@ Done when the call returns `needs_me`.
 Everything the decision covers waits for the answer. Work that holds up whichever way the captain decides can go on.
 
 - **Hooked session** (a tracker hook told you, in this session, that it wakes when the captain answers): end your turn. The answer starts your next turn.
-- **Otherwise, poll.** This is the default, and it holds in headless runs. Call `task_answers` (CLI: `agents task answers`). Each call waits up to 25s, so give a shell call a timeout of 30s or more. On `pending`, poll again; keep polling until `answered`. A timed-out read loses nothing: the answer stays on the tracker.
+- **Otherwise, poll.** This is the default, and it holds in headless runs. Call `task_answers` (CLI: `agnt-trkr task answers`). Each call waits up to 25s, so give a shell call a timeout of 30s or more. On `pending`, poll again; keep polling until `answered`. A timed-out read loses nothing: the answer stays on the tracker.
 
 Done when `status` is `answered`.
 
