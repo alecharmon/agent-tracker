@@ -39,6 +39,8 @@ Hooks make an idle agent resume when you answer. They also keep running and idle
 | Pi | `pi/agent-tracker.ts` → `.pi/extensions/` | extension starts a new turn |
 | OpenCode | `opencode/agent-tracker.ts` → `.opencode/plugins/` | plugin prompts the session |
 
+Systems that seed items instead of running as an agent session, such as a firstmate fleet snapshot, collect your answers with `agnt-trkr inbox --source <name> --wait forever`. See `docs/firstmate.md`.
+
 `npm run evals` checks that agents follow the skill, using each harness headless against a scripted captain. See `evals/README.md`.
 
 ## Set it up
